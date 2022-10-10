@@ -3,6 +3,7 @@ package jason.asSemantics.epistemic;
 import jason.JasonException;
 import jason.asSemantics.*;
 import jason.asSemantics.epistemic.reasoner.EpistemicReasoner;
+import jason.asSemantics.epistemic.reasoner.formula.*;
 import jason.asSyntax.*;
 import jason.bb.BeliefBase;
 import jason.bb.DefaultBeliefBase;
@@ -11,10 +12,8 @@ import java.util.*;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
-public class EpistemicExtension {
+public class EpistemicExtension implements Propositionalizer {
     private static final PredicateIndicator RANGE_PRED_IND = new PredicateIndicator("range", 1);
-    private static final String LOG_OR_SYMBOL = "or";
-    private static final String LOG_AND_SYMBOL = "and";
     private static final PredicateIndicator SINGLE_PRED_IND = new PredicateIndicator("single", 1);
     private TransitionSystem ts;
     private EpistemicReasoner reasoner;
@@ -26,53 +25,63 @@ public class EpistemicExtension {
         this.ts = ts;
         this.modelCreated = false;
         this.groundingBase = new DefaultBeliefBase();
-        this.reasoner = new EpistemicReasoner();
+        this.reasoner = new EpistemicReasoner(this);
     }
 
     public void modelCreateSem() {
         if (modelCreated) return;
 
-        List<String> constraints = getModelCreationConstraints();
+        Set<Formula> constraints = getModelCreationConstraints();
 
         reasoner.createModel(constraints);
 
         modelCreated = true;
     }
 
-    protected List<String> getModelCreationConstraints() {
-        List<String> constraints = new ArrayList<>();
+    protected Set<Formula> getModelCreationConstraints() {
+        Set<Formula> constraints = new HashSet<>();
+
+        // Add initial beliefs to constraints
+        this.ts.getAg().getBB().forEach(l -> {
+
+            // Do not include percepts in the initial model -- these are captured by event models
+            if (!l.isRule() && l.getNS() == Literal.DefaultNS && !l.hasSource(new Atom("percept")))
+                constraints.add(propLit(l));
+        });
+
+        // Process rule semantics
+        List<Rule> allRules = new ArrayList<>(getAllRules());
 
         // Load range rule constraints
-        constraints.addAll(getRangeConstraints());
+        constraints.addAll(getRangeConstraints(allRules));
 
-        constraints.addAll(getSingleConstraints());
+        constraints.addAll(getSingleConstraints(allRules));
 
         // Load initial beliefs and
-        constraints.addAll(getRuleConstraints());
+        constraints.addAll(getRuleConstraints(allRules));
 
         return constraints;
     }
 
-    private List<String> getSingleConstraints() {
+    private Set<Formula> getSingleConstraints(List<Rule> allRules) {
         // Filter range rules
-        List<Rule> singleRules = getAllRules().stream().filter(r -> r.getPredicateIndicator().equals(SINGLE_PRED_IND)).collect(Collectors.toList());
+        List<Rule> singleRules = allRules.stream().filter(r -> r.getPredicateIndicator().equals(SINGLE_PRED_IND)).collect(Collectors.toList());
 
         // Map each rule to its constraint
-        return singleRules.stream().map(this::interpretSingle).collect(Collectors.toList());
+        return singleRules.stream().map(this::interpretSingle).reduce((l1, l2) -> {
+            var newList = new HashSet<Formula>();
+            newList.addAll(l1);
+            newList.addAll(l2);
+            return newList;
+        }).orElse(new HashSet<>());
     }
 
     public void modelUpdateSem() throws JasonException {
         // Get all belief events
-        var events = ts.getC().getEvents().stream()
-                .filter(e -> e.getTrigger().getType() == Trigger.TEType.belief);
+        var events = ts.getC().getEvents().stream().filter(e -> e.getTrigger().getType() == Trigger.TEType.belief);
 
         // Map each event '+/-e' to '+/-on(e)
-        var onEvents = events
-                .map(e -> new Event(new Trigger(
-                        e.getTrigger().getOperator(),
-                        e.getTrigger().getType(),
-                        ASSyntax.createLiteral("on", e.getTrigger().getLiteral())
-                ), e.getIntention()));
+        var onEvents = events.map(e -> new Event(new Trigger(e.getTrigger().getOperator(), e.getTrigger().getType(), ASSyntax.createLiteral("on", e.getTrigger().getLiteral().clearAnnots())), e.getIntention()));
 
         onEvents.forEach(event -> {
             try {
@@ -84,67 +93,75 @@ public class EpistemicExtension {
     }
 
     private void applyEventModel(Event event) throws JasonException {
-        DELEventModel eventModel = createEventModel(event);
-        reasoner.applyEventModel(eventModel);
-    }
-
-    private DELEventModel createEventModel(Event event) throws JasonException {
         // Map each trigger to a list of relevant plans
         OnEvent onEvent = new OnEvent(event);
 
-        var relPlans = ts.relevantPlans(event.getTrigger(), null);
+        if (onEvent.getEventLit().getNS() != Literal.DefaultNS) {
+            ts.getLogger().info("Skipping on event for " + event.getTrigger());
+            return;
+        }
+
+        DELEventModel eventModel = createEventModel(onEvent);
+        reasoner.applyEventModel(eventModel);
+    }
+
+    private DELEventModel createEventModel(OnEvent onEvent) throws JasonException {
+        var relPlans = ts.relevantPlans(onEvent.getTrigger(), null);
 
         // Map each plan to a clone, where we can find all unifs (otherwise, Jason only finds the first unifier)
         var appPlans = applicablePlans(relPlans);
 
         if (appPlans == null || appPlans.isEmpty())
             return createDefaultEventModel(onEvent);
-        createDefaultEventModel(onEvent);
 
 
         Set<DELEvent> delEvents = appPlans.stream().map(this::mapPlanToEvent).collect(Collectors.toSet());
-
-        /*
-
-          Next Steps:
-          -
-
-
-         */
-
         return new DELEventModel(delEvents);
     }
 
     private DELEventModel createDefaultEventModel(OnEvent onEvent) {
 
         Pred pEv = new Pred(onEvent.getEventPred());
-        DELEvent defEv = new DELEvent(onEvent.getEvent().getTrigger());
-        if (onEvent.isAddition())
-            defEv.addPostCondition(pEv.toString(), Literal.LTrue.toString());
+        DELEvent defEv = new DELEvent(onEvent.getEvent().getTrigger().getOperator().toString() + onEvent.getEventLit());
+        if (onEvent.isAddition() && !onEvent.getEventLit().negated())
+            defEv.addPostCondition(new PropFormula(pEv), new PropFormula(new Pred(Literal.LTrue)));
         else
-            defEv.addPostCondition(pEv.toString(), Literal.LFalse.toString());
+            defEv.addPostCondition(new PropFormula(pEv), new PropFormula(new Pred(Literal.LFalse)));
 
         return new DELEventModel(Set.of(defEv));
     }
 
     private DELEvent mapPlanToEvent(Option option) {
-        DELEvent ev = new DELEvent(option);
+        // Erase label from plan for the sake of
+        Plan planNoLabel = ((Plan) option.getPlan().clone());
+        planNoLabel.delLabel();
+
+        DELEvent ev = new DELEvent(planNoLabel);
         Plan unifPlan = option.getPlan().capply(option.getUnifier());
 
-        String propPrecondition = pareAndProp(unifPlan.getContext());
-        ev.setPreCondition(propPrecondition);
+        // Only process context when non-null
+        if(unifPlan.getContext() != null) {
+            Formula propPrecondition = pareAndProp(unifPlan.getContext());
+            ev.setPreCondition(propPrecondition);
+        }
 
         PlanBody cur = unifPlan.getBody();
         while (cur != null) {
-            if (cur.getBodyType() == PlanBody.BodyType.addBel) {
-                ev.addPostCondition(prop(cur.getBodyTerm()), Literal.LTrue.toString());
-            } else if (cur.getBodyType() == PlanBody.BodyType.delBel) {
-                ev.addPostCondition(prop(cur.getBodyTerm()), Literal.LFalse.toString());
+            if (!cur.getBodyTerm().isLiteral()) {
+                cur = cur.getBodyNext();
+                continue;
             }
+
+            Literal bodyLit = (Literal) cur.getBodyTerm();
+
+            if (cur.getBodyType() == PlanBody.BodyType.addBel && !bodyLit.negated()) {
+                ev.addPostCondition(new PropFormula(new Pred(bodyLit)), new PropFormula(new Pred(Literal.LTrue)));
+            } else if (cur.getBodyType() == PlanBody.BodyType.delBel || bodyLit.negated()) {
+                ev.addPostCondition(new PropFormula(new Pred(bodyLit)), new PropFormula(new Pred(Literal.LFalse)));
+            }
+
             cur = cur.getBodyNext();
         }
-//        for (var act : unifPlan.getBody())
-
         return ev;
     }
 
@@ -157,8 +174,7 @@ public class EpistemicExtension {
      */
     public List<Option> applicablePlans(List<Option> rp) {
         synchronized (ts.getC().syncApPlanSense) {
-            if (rp == null)
-                return null;
+            if (rp == null) return null;
 
             List<Option> ap = null;
             for (Option opt : rp) {
@@ -172,28 +188,30 @@ public class EpistemicExtension {
                     if (ts.getLogger().isLoggable(Level.FINE))
                         ts.getLogger().log(Level.FINE, "     " + opt.getPlan().getLabel() + " is applicable with unification " + opt.getUnifier());
                 } else {
-                    //  boolean allUnifs = opt.getPlan().isAllUnifs();
-                    boolean allUnifs = true;
-
                     Iterator<Unifier> r = logicalCons(context, groundingBase, opt.getUnifier());
                     boolean isApplicable = false;
+                    Set<Unifier> distinctUnifs = new HashSet<>();
+
                     if (r != null) {
                         while (r.hasNext()) {
                             isApplicable = true;
-                            opt.setUnifier(r.next());
 
-                            if (ap == null) ap = new LinkedList<>();
-                            ap.add(opt);
+                            if (ap == null)
+                                ap = new LinkedList<>();
+
+                            var unif = r.next();
+
+                            // Only add distinct unifiers
+                            if (!distinctUnifs.contains(unif))
+                                ap.add(new Option(opt.getPlan(), unif));
+
+                            distinctUnifs.add(unif);
 
                             if (ts.getLogger().isLoggable(Level.FINE))
                                 ts.getLogger().log(Level.FINE, "     " + opt.getPlan().getLabel() + " is applicable with unification " + opt.getUnifier());
 
-                            if (!allUnifs) break; // returns only the first unification
-                            if (r.hasNext()) {
-                                // create a new option for the next loop step
-                                opt = new Option(opt.getPlan(), null);
-                            }
                         }
+
                     }
 
                     if (!isApplicable && ts.getLogger().isLoggable(Level.FINE))
@@ -209,25 +227,21 @@ public class EpistemicExtension {
      * Gets log cons with respect to a different set of literals
      */
     private Iterator<Unifier> logicalCons(LogicalFormula context, BeliefBase groundingBase, Unifier unifier) {
-        if (context == null)
-            return null;
+        if (context == null) return null;
 
         // Need to clone agent and set up new belief base
-        var customAg = ts.getAg().clone(ts.getAgArch());
-        customAg.setBB(groundingBase);
-
+        var customAg = CallbackLogicalConsequence.CreateBBLogicalConsequence(ts.getAg(), groundingBase);
         return context.logicalConsequence(customAg, unifier);
     }
 
-    private List<String> getRuleConstraints() {
+    private Set<Formula> getRuleConstraints(List<Rule> allRules) {
         // Filter range rules
-        var standardRuleStm = getAllRules().stream()
-                .filter(r -> !r.getPredicateIndicator().equals(RANGE_PRED_IND))
-                .filter(r -> !r.getPredicateIndicator().equals(SINGLE_PRED_IND))
-                .filter(r -> r.getNS() == Literal.DefaultNS);
+        var standardRuleStm = allRules.stream().filter(r -> !r.getPredicateIndicator().equals(RANGE_PRED_IND)).filter(r -> !r.getPredicateIndicator().equals(SINGLE_PRED_IND)).filter(r -> r.getNS() == Literal.DefaultNS);
 
+        List<Rule> standardRulesList = standardRuleStm.collect(Collectors.toList());
 
-        Set<Literal> allGroundRules = standardRuleStm.map(this::getGroundConsequences).reduce((r1, r2) -> {
+        // Map all rules to their ground consequences, then reduce (join) them into a single set
+        Set<Literal> allGroundRules = standardRulesList.stream().map(this::getGroundConsequences).reduce((r1, r2) -> {
             Set<Literal> joined = new HashSet<>(r1);
             joined.addAll(r2);
             return joined;
@@ -235,55 +249,76 @@ public class EpistemicExtension {
 
         Map<Literal, Set<LogicalFormula>> headToBodyMap = new HashMap<>();
 
-        for(Literal ruleLit : allGroundRules)
-        {
+        // For all groundings, map the head literal to the set of corresponding body literals
+        for (Literal ruleLit : allGroundRules) {
             Rule rule = (Rule) ruleLit;
 
             Literal head = rule.getHead();
             LogicalFormula body = rule.getBody();
 
-            if(!headToBodyMap.containsKey(head))
-                headToBodyMap.put(head, new HashSet<>());
+            if (!headToBodyMap.containsKey(head)) headToBodyMap.put(head, new HashSet<>());
 
-            headToBodyMap.get(head).add(body);
+            // Pare body down
+            LogicalFormula paredBody = (LogicalFormula) pare(body);
+
+            headToBodyMap.get(head).add(paredBody);
+
+        }
+
+        // Map each rule literal to its constraint
+        Set<Formula> ruleConstraints = allGroundRules.stream().map(l -> (Rule) l).map(this::interpretRuleConstraint).collect(Collectors.toSet());
+
+
+        // We need to remove any rule bodies that are strictly true/false, since these rules do not require us to model the negation semantics
+        for (Iterator<Map.Entry<Literal, Set<LogicalFormula>>> it = headToBodyMap.entrySet().iterator(); it.hasNext(); ) {
+            Set<LogicalFormula> paredBodySet = it.next().getValue();
+
+            // Remove entries where there is:
+            // 1. a true rule body (in this case, all worlds will have the prop)
+            // 2. A false rule body (no worlds)
+            if (paredBodySet.contains(Literal.LTrue) || paredBodySet.contains(Literal.LFalse)) it.remove();
 
         }
 
 
-        List<Rule> nonRangeRules = standardRuleStm.collect(Collectors.toList());
+        // Create sentences for equivalences
+        ruleConstraints.addAll(headToBodyMap.entrySet().stream().map(this::interpretStandardEquivalence).collect(Collectors.toList()));
 
-        // Map each rule to its constraint
-        return nonRangeRules.stream().map((Rule r) -> interpretRuleConstraint(r, headToBodyMap)).collect(Collectors.toList());
-
+        return ruleConstraints;
     }
 
-    private String interpretRuleConstraint(Rule r, Map<Literal, Set<LogicalFormula>> headToBodyMap) {
+    private Formula interpretStandardEquivalence(Map.Entry<Literal, Set<LogicalFormula>> literalSetEntry) {
+
+        // 1 Create a disjunction of all possible bodies
+        Formula bodyDisjunc = createDisjunction(literalSetEntry.getValue().stream().map(this::pareAndProp).collect(Collectors.toSet()));
+
+        Formula head = propLit(literalSetEntry.getKey());
+
+        return new EquivFormula(head, bodyDisjunc);
+    }
+
+    private Formula interpretRuleConstraint(Rule r) {
         // Rule must be ground
-        if(!r.getHead().isGround())
-            throw new RuntimeException("Rule " + r + " must be ground!");
+        if (!r.getHead().isGround()) throw new RuntimeException("Rule " + r + " must be ground!");
 
         // 1. Find all groundings of range
         Set<Literal> ground = getGroundConsequences(r);
 
         // Map into pairs of propositionalized (ground body -> ground head)
         // TODO: Note that rule body may not be ground!
-        List<List<Term>> implicationLists = ground.stream()
-                .map(l -> (Rule) l) // Map each lit to a rule
-                .map(rule -> List.of(pare(rule.getHead()), pare(rule.getBody())))
-                .collect(Collectors.toList());
+        List<List<Term>> implicationLists = ground.stream().map(l -> (Rule) l) // Map each lit to a rule
+                .map(rule -> List.of(pare(rule.getHead()), pare(rule.getBody()))).collect(Collectors.toList());
 
         // Insert all other initial beliefs:
         for (Literal bel : ts.getAg().getInitialBels()) {
-            if (bel.isRule())
-                continue;
+            if (bel.isRule()) continue;
 
             // true -> bel (bel is true in all worlds)
             implicationLists.add(List.of(bel, Literal.LTrue));
         }
 
 
-        List<String> implications = implicationLists.stream()
-                .filter(l -> l.get(1) != Literal.LFalse) // Bodies that collapse to false are filtered out
+        Set<Formula> implications = implicationLists.stream().filter(l -> l.get(1) != Literal.LFalse) // Bodies that collapse to false are filtered out
                 .map(l -> {
                     // Map each implication pair to its corresponding string.
                     // Pairs with a 'true' body will just be propositionalized as a head (no implication)
@@ -291,26 +326,19 @@ public class EpistemicExtension {
                     Term head = l.get(0);
                     Term body = l.get(1);
 
-                    if (body == Literal.LTrue)
-                        return prop(head);
+                    if (body == Literal.LTrue) return prop(head);
 
-                    return prop(body) + " -> " + prop(head);
-                })
-                .collect(Collectors.toList());
-
-
-
+                    return new ImpliesFormula(prop(body), prop(head));
+                }).collect(Collectors.toSet());
 
 
         // 2. For each ground lit l:
-        //  a. convert to disjunction: l or not l
-        //  b. add {l, ~l} to grounding set
 
         for (var list : implicationLists) {
             // Add head literal to grounding base if not seen before
             groundingBase.add((Literal) list.get(0));
 
-            // TODO: Figure out if we should also add negation if applicable (what about non-ranged lits?)
+
         }
 
 
@@ -325,38 +353,53 @@ public class EpistemicExtension {
         return createConjunction(implications);
     }
 
-    private String prop(Term pared) {
-        if (!pared.isGround())
-            throw new RuntimeException("Term must be ground to be propositionalized: " + pared);
+    private Formula prop(Term pared) {
+        if (!pared.isGround()) throw new RuntimeException("Term must be ground to be propositionalized: " + pared);
 
-        if (pared instanceof LogExpr)
-            return propExpr((LogExpr) pared);
+        if (pared instanceof LogExpr) return propExpr((LogExpr) pared);
 
-        if (pared instanceof Literal)
-            return propLit((Literal) pared);
+        if (pared instanceof Literal) return propLit((Literal) pared);
 
         throw new RuntimeException("Prop not supported?");
     }
 
-    private String propExpr(LogExpr pared) {
+    private Formula propExpr(LogExpr pared) {
+        switch (pared.getOp()) {
+            case not -> {
+                return new NotFormula(prop(pared.getLHS()));
+            }
+            case and -> {
+                return new AndFormula(prop(pared.getLHS()), prop(pared.getRHS()));
+            }
+            case or -> {
+                return new OrFormula(prop(pared.getLHS()), prop(pared.getRHS()));
+            }
+            default -> {
+                return prop(pared.getLHS());
+            }
+        }
 
-        return "(" + prop(pared.getLHS()) + " " + pared.getOp().toString() + " " + pare(pared.getRHS()) + ")";
+//        return "(" + prop(pared.getLHS()) + " " + pared.getOp().toString() + " " + prop(pared.getRHS()) + ")";
     }
 
-    private String pareAndProp(Term unpared) {
+    private Formula pareAndProp(Term unpared) {
         return prop(pare(unpared));
     }
 
 
-    private List<String> getRangeConstraints() {
+    private Set<Formula> getRangeConstraints(List<Rule> allRules) {
         // Filter range rules
-        List<Rule> rangeRules = getAllRules().stream().filter(r -> r.getPredicateIndicator().equals(RANGE_PRED_IND)).collect(Collectors.toList());
+        List<Rule> rangeRules = allRules.stream().filter(r -> r.getPredicateIndicator().equals(RANGE_PRED_IND)).collect(Collectors.toList());
 
         // Map each rule to its constraint
-        return rangeRules.stream().map(this::interpretRange).collect(Collectors.toList());
+        return rangeRules.stream().map(this::interpretRange).reduce((r1, r2) -> {
+            Set<Formula> joined = new HashSet<>(r1);
+            joined.addAll(r2);
+            return joined;
+        }).orElse(new HashSet<>());
     }
 
-    private String interpretRange(Rule r) {
+    private Set<Formula> interpretRange(Rule r) {
 
         // 1. Find all groundings of range
         Set<Literal> ground = getGroundConsequences(r);
@@ -367,7 +410,7 @@ public class EpistemicExtension {
         // 2. For each ground lit l:
         //  a. convert to disjunction: l or not l
         //  b. add {l, ~l} to grounding set
-        List<String> disjunctions = new ArrayList<>();
+        Set<Formula> disjunctions = new HashSet<>();
         for (Literal l : ground) {
             // Add literal pos and neg
             Literal neg = ((Literal) l.clone()).setNegated(Literal.LNeg);
@@ -388,29 +431,11 @@ public class EpistemicExtension {
 
          */
 
-        return createConjunction(disjunctions);
+        return disjunctions;
     }
 
-    private String interpretSingle(Rule r) {
-// single(X) => single(X = {a, b, c})
-        // Add a, b, c to grounding set
-        // Constraint: (a and not b and not c) or ...
+    private Set<Formula> interpretSingle(Rule r) {
 
-        // 1. Find all groundings of single rule r
-        Set<Literal> ground = getGroundConsequences(r);
-
-        // Isolate ground head and remove 'Range' wrapper
-        ground = ground.stream().map(l -> (Literal) l.getTerm(0)).collect(Collectors.toSet());
-
-        if (ground.isEmpty())
-            return "";
-
-        String csProps = ground.stream().map(this::prop).collect(Collectors.joining(", "));
-
-        return "exact(1, [" + csProps + "])";
-    }
-
-    private String oldInterpretSingle(Rule r) {
         // single(X) => single(X = {a, b, c})
         // Add a, b, c to grounding set
         // Constraint: (a and not b and not c) or ...
@@ -421,67 +446,43 @@ public class EpistemicExtension {
         // Isolate ground head and remove 'Range' wrapper
         ground = ground.stream().map(l -> (Literal) l.getTerm(0)).collect(Collectors.toSet());
 
-        // 2. For each ground lit l:
-        //  a. convert to disjunction: l or not l
-        //  b. add {l, ~l} to grounding set
-        List<String> allConjunctions = new ArrayList<>();
-        for (Literal postLit : ground) {
-            // Add literal pos and neg
-            Literal pos = ((Literal) postLit.clone()).setNegated(Literal.LPos);
+        if (ground.isEmpty()) return new HashSet<>();
 
-            // Add pos and neg to Ground set
-            groundingBase.add(pos);
-            groundingBase.add(new LiteralImpl(pos).setNegated(Literal.LNeg));
+        Set<Formula> groundProp = ground.stream().map(this::prop).collect(Collectors.toSet());
 
-            Set<String> conjunctions = new HashSet<>();
-            conjunctions.add(prop(pos));
+        Set<Formula> singleConstraints = new HashSet<>();
 
-            for (Literal negLit : ground) {
-                if (negLit == postLit)
-                    continue;
+        singleConstraints.add(createDisjunction(groundProp));
 
-                Literal neg = ((Literal) negLit.clone()).setNegated(Literal.LNeg);
-                conjunctions.add(prop(neg));
+        for (var g : ground) {
+            for (var g2 : ground) {
+                if (g == g2) continue;
+                singleConstraints.add(new ImpliesFormula(prop(g), new NotFormula(prop(g2))));
             }
-
-
-            // Create disj form string, and add both forms to ground base
-            allConjunctions.add(createConjunction(conjunctions));
-
         }
 
+//        String csProps = ground.stream().map(this::prop).collect(Collectors.joining(", "));
+//        return "exact(1, [" + csProps + "])";
 
-        /*
-            (Range 1, Constraint 1): Get all groundings of rule
-            (Range 2): Convert groundings to disjunction
-
-
-
-         */
-
-        return createDisjunction(allConjunctions);
+        return singleConstraints;
     }
-
 
     private Set<Literal> getGroundConsequences(Literal l) {
         // Find all groundings of range
         Set<Literal> ground = new HashSet<>();
 
-        LogicalFormula litForCons = l;
+        LogicalFormula litForCons = l.clearAnnots();
 
-        if (l.isRule())
-            litForCons = ((Rule) l).getBody();
+        if (l.isRule()) litForCons = ((Rule) l).getBody();
 
-        // Get all consequences
-        var cons = litForCons.logicalConsequence(ts.getAg(), new Unifier());
+        // Get all consequences (using grounding base)
+        var cons = logicalCons(litForCons, groundingBase, new Unifier());
 
         // No consequences
-        if (cons == null)
-            return ground;
+        if (cons == null) return ground;
 
         // Add head if already ground
-        if (l.isGround())
-            ground.add(l);
+        if (l.isGround()) ground.add(l);
 
         // Iterate all unifiers
         while (cons.hasNext()) {
@@ -497,8 +498,7 @@ public class EpistemicExtension {
                 isGround = resRule.getHead().isGround();
             }
 
-            if (isGround)
-                ground.add(res);
+            if (isGround) ground.add(res);
         }
 
         return ground;
@@ -506,18 +506,14 @@ public class EpistemicExtension {
 
 
     private Term pare(Term t) {
-        if (!t.isGround())
-            throw new RuntimeException("Term must be ground to be pared: " + t);
+        if (!t.isGround()) throw new RuntimeException("Term must be ground to be pared: " + t);
 
-        if (t instanceof LogExpr)
-            return pareExpr((LogExpr) t);
+        if (t instanceof LogExpr) return pareExpr((LogExpr) t);
 
         // Terms that simplify to true, e.g. rel expr (5 = 5), int actions (.member(5, [1, 5]))
-        if (t instanceof RelExpr || t instanceof InternalActionLiteral)
-            return Literal.LTrue;
+        if (t instanceof RelExpr || t instanceof InternalActionLiteral) return Literal.LTrue;
 
-        if (t instanceof Literal)
-            return pareLit((Literal) t);
+        if (t instanceof Literal) return pareLit((Literal) t);
 
 //        if (t instanceof LogicalFormula)
 //            return pareForm((LogicalFormula) t);
@@ -533,13 +529,11 @@ public class EpistemicExtension {
     private Term pareExpr(LogExpr t) {
         if (t.getOp() == LogExpr.LogicalOp.and) {
             var formLeft = (LogicalFormula) pare(t.getLHS());
-            var formRight = (LogicalFormula) pare(t.getLHS());
+            var formRight = (LogicalFormula) pare(t.getRHS());
 
-            if (formLeft == Literal.LTrue)
-                return formRight;
+            if (formLeft == Literal.LTrue) return formRight;
 
-            if (formRight == Literal.LTrue)
-                return formLeft;
+            if (formRight == Literal.LTrue) return formLeft;
 
             // Otherwise, return pared expression.
             return new LogExpr(formLeft, LogExpr.LogicalOp.and, formRight);
@@ -548,13 +542,11 @@ public class EpistemicExtension {
 
         if (t.getOp() == LogExpr.LogicalOp.or) {
             var formLeft = (LogicalFormula) pare(t.getLHS());
-            var formRight = (LogicalFormula) pare(t.getLHS());
+            var formRight = (LogicalFormula) pare(t.getRHS());
 
-            if (formLeft == Literal.LFalse)
-                return formRight;
+            if (formLeft == Literal.LFalse) return formRight;
 
-            if (formRight == Literal.LFalse)
-                return formLeft;
+            if (formRight == Literal.LFalse) return formLeft;
 
             // Otherwise, return pared expression.
             return new LogExpr(formLeft, LogExpr.LogicalOp.or, formRight);
@@ -574,8 +566,7 @@ public class EpistemicExtension {
     }
 
     private Literal pareLit(Literal lit) {
-        if (lit.isGround())
-            return lit;
+        if (lit.isGround()) return lit;
         // if lit is not ground, return false lit
         // This covers case of possible disjunction in log expr: x(1, 2) OR y(A, Z)
         // Returns 'x(1, 2) OR FALSE'
@@ -584,37 +575,30 @@ public class EpistemicExtension {
 
     }
 
-    private String propLit(Literal l) {
-        if (!l.isGround())
-            throw new RuntimeException("Literal must be ground for prop!");
+    public Formula propLit(Literal l) {
+        if (!l.isGround()) throw new RuntimeException("Literal must be ground for prop!");
 
-        if (l == Literal.LTrue || l == Literal.LFalse || !l.negated())
-            return l.toString();
+        // Remove annotations
+        l = l.copy().clearAnnots();
+
+        if (l == Literal.LTrue || l == Literal.LFalse || !l.negated()) return new PropFormula(new Pred(l));
 
         // Convert literal to prop sentence form.
-        return "("
-                + (l.negated() ? "not " : "")
-                + l.setNegated(Literal.LPos)
-                + ")";
+        return new NotFormula(new Pred(l)); // "(" + (l.negated() ? "not " : "") + l.setNegated(Literal.LPos) + ")";
     }
 
-    private String createForm(Collection<String> lits, String symbol) {
-        // Map each lit to string, then join with log. OR symbol
-        return "(" + String.join(" " + symbol + " ", lits) + ")";
+    private AndFormula createConjunction(Set<Formula> literals) {
+        return new AndFormula(literals);
     }
 
-    private String createConjunction(Collection<String> literals) {
-        return createForm(literals, LOG_AND_SYMBOL);
-    }
-
-    private String createDisjunction(Collection<String> literals) {
-        return createForm(literals, LOG_OR_SYMBOL);
+    private OrFormula createDisjunction(Set<Formula> literals) {
+        return new OrFormula(literals);
     }
 
     private List<Rule> getAllRules() {
         List<Rule> allRules = new ArrayList<>();
         for (var b : ts.getAg().getBB())
-            if (b.isRule()) allRules.add((Rule) b);
+            if (b.isRule() && b.getNS() == Literal.DefaultNS) allRules.add((Rule) b);
         return allRules;
     }
 

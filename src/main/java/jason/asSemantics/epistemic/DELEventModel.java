@@ -9,4 +9,8 @@ public class DELEventModel {
     public DELEventModel(Set<DELEvent> delEvents) {
         this.delEvents = delEvents;
     }
+
+    public Set<DELEvent> getDelEvents() {
+        return delEvents;
+    }
 }

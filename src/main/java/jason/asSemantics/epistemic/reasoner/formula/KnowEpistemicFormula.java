@@ -1,6 +1,5 @@
 package jason.asSemantics.epistemic.reasoner.formula;
 
-import epistemic.wrappers.WrappedLiteral;
 import jason.asSyntax.Literal;
 
 public class KnowEpistemicFormula extends EpistemicFormula {
@@ -21,8 +20,9 @@ public class KnowEpistemicFormula extends EpistemicFormula {
         return false;
     }
 
+
     @Override
-    protected WrappedLiteral processRootLiteral(WrappedLiteral originalLiteral) {
-        return originalLiteral;
+    protected Literal processRootLiteral(Literal originalLiteral) {
+        return originalLiteral.copy();
     }
 }

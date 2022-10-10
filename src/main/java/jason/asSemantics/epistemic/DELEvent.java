@@ -1,41 +1,42 @@
 package jason.asSemantics.epistemic;
 
+import jason.asSemantics.epistemic.reasoner.formula.Formula;
+import jason.asSemantics.epistemic.reasoner.formula.PropFormula;
 import jason.asSyntax.Literal;
+import jason.asSyntax.Pred;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class DELEvent {
     private String eventId;
-    private String preCondition;
-    private Map<String, String> postCondition;
+    private Formula preCondition;
+    private Map<PropFormula, Formula> postCondition;
 
-    public DELEvent(Object eventId, String preCondition)
-    {
+    public DELEvent(Object eventId, Formula preCondition) {
         this.eventId = eventId.toString();
         this.preCondition = preCondition;
         this.postCondition = new HashMap<>();
     }
 
-    public DELEvent(Object eventId)
-    {
-        this(eventId, Literal.LTrue.toString());
+    public DELEvent(Object eventId) {
+        this(eventId, new PropFormula(new Pred(Literal.LTrue)));
     }
 
 
-    public Map<String, String> getPostCondition() {
+    public Map<PropFormula, Formula> getPostCondition() {
         return postCondition;
     }
 
-    public void setPostCondition(Map<String, String> postCondition) {
+    public void setPostCondition(Map<PropFormula, Formula> postCondition) {
         this.postCondition = postCondition;
     }
 
-    public String getPreCondition() {
+    public Formula getPreCondition() {
         return preCondition;
     }
 
-    public void setPreCondition(String preCondition) {
+    public void setPreCondition(Formula preCondition) {
         this.preCondition = preCondition;
     }
 
@@ -47,7 +48,7 @@ public class DELEvent {
         this.eventId = eventId;
     }
 
-    public void addPostCondition(String str, String val) {
+    public void addPostCondition(PropFormula str, Formula val) {
         this.postCondition.put(str, val);
     }
 }

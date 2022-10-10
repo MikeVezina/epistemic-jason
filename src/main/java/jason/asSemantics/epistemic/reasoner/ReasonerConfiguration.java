@@ -11,7 +11,7 @@ public class ReasonerConfiguration {
     private static final String REASONER_CONFIG_JSON = "reasoner-config.json";
     private static final String DEFAULT_FULL_HOST = "http://localhost:9090";
     private static final String API_EVALUATE = "/api/evaluate";
-    private static final String API_TRANSITION = "/api/transition-update";
+    private static final String APPLY_EVENT = "/api/apply-event";
     private static final String API_PROPS = "/api/props";
     private static final String API_MODEL = "/api/model";
     private static ReasonerConfiguration instance;
@@ -51,6 +51,6 @@ public class ReasonerConfiguration {
     }
 
     public String getTransitionUpdateEndpoint() {
-        return fullHost + API_TRANSITION;
+        return fullHost + APPLY_EVENT;
     }
 }

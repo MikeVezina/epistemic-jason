@@ -1,6 +1,5 @@
 package jason.asSemantics.epistemic.reasoner.formula;
 
-import epistemic.wrappers.WrappedLiteral;
 import jason.asSyntax.ASSyntax;
 import jason.asSyntax.Literal;
 
@@ -21,18 +20,22 @@ public class PossibleEpistemicFormula extends EpistemicFormula {
         return EpistemicFormula.fromLiteral(
                 ASSyntax.createLiteral(
                         EpistemicModality.POSSIBLE.getFunctor(),
-                        getRootLiteral().getCleanedLiteral().setNegated(propNegated ? Literal.LNeg : Literal.LPos))
+                        getRootLiteral().setNegated(propNegated ? Literal.LNeg : Literal.LPos))
+//                        getRootLiteral().getCleanedLiteral().setNegated(propNegated ? Literal.LNeg : Literal.LPos))
                         .setNegated(modalNegated ? Literal.LNeg : Literal.LPos)
         );
     }
 
     @Override
     protected boolean getModalityNegated() {
-        return getOriginalWrappedLiteral().getOriginalLiteral().negated();
+        return getOriginalLiteral().negated();
     }
 
     @Override
-    protected WrappedLiteral processRootLiteral(WrappedLiteral originalLiteral) {
-        return new WrappedLiteral((Literal) originalLiteral.getOriginalLiteral().getTerm(0));
+    protected Literal processRootLiteral(Literal originalLiteral) {
+        if(originalLiteral.getArity() != 1)
+            throw new RuntimeException("Invalid possibility formula: " + originalLiteral);
+
+        return ((Literal) originalLiteral.getTerm(0));
     }
 }

@@ -1,8 +1,9 @@
 package jason.asSemantics.epistemic.reasoner.formula;
 
-import epistemic.wrappers.WrappedLiteral;
+//import epistemic.wrappers.Literal;
 import jason.asSemantics.Unifier;
 import jason.asSyntax.Literal;
+import jason.asSyntax.LiteralImpl;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -14,8 +15,8 @@ import java.util.UUID;
  */
 public abstract class EpistemicFormula {
 
-    private final WrappedLiteral rootLiteral;
-    private final WrappedLiteral originalLiteral;
+    private final Literal rootLiteral;
+    private final Literal originalLiteral;
     private final EpistemicModality modality;
     private final boolean modalityNegated;
     private final boolean propositionNegated;
@@ -28,16 +29,16 @@ public abstract class EpistemicFormula {
      */
     protected EpistemicFormula(EpistemicModality modality, Literal originalLiteral) {
         this.modality = modality;
-        this.originalLiteral = new WrappedLiteral(originalLiteral);
+        this.originalLiteral = new LiteralImpl(originalLiteral);
         this.rootLiteral = processRootLiteral(this.originalLiteral);
         this.modalityNegated = getModalityNegated();
-        this.propositionNegated = rootLiteral.getOriginalLiteral().negated();;
+        this.propositionNegated = ((Literal) rootLiteral.clone()).negated();
         uuid = UUID.randomUUID();
     }
 
     protected abstract boolean getModalityNegated();
 
-    protected abstract WrappedLiteral processRootLiteral(WrappedLiteral originalLiteral);
+    protected abstract Literal processRootLiteral(Literal originalLiteral);
 
     public boolean isPropositionNegated() {
         return propositionNegated;
@@ -70,7 +71,7 @@ public abstract class EpistemicFormula {
         return modality;
     }
 
-    public WrappedLiteral getRootLiteral() {
+    public Literal getRootLiteral() {
         return rootLiteral;
     }
 
@@ -85,10 +86,11 @@ public abstract class EpistemicFormula {
     }
 
     public Literal getCleanedOriginal() {
-        return originalLiteral.getCleanedLiteral();
+//        return originalLiteral.getCleanedLiteral();
+        return originalLiteral.copy();
     }
 
-    public WrappedLiteral getOriginalWrappedLiteral() {
+    public Literal getOriginalLiteral() {
         return originalLiteral;
     }
 
@@ -114,15 +116,11 @@ public abstract class EpistemicFormula {
 
     @Override
     public int hashCode() {
-        return Objects.hash(rootLiteral.toSafePropName(), modality, modalityNegated, propositionNegated);
+        return Objects.hash(rootLiteral.toString(), modality, modalityNegated, propositionNegated);
     }
 
     @Override
     public String toString() {
         return getCleanedOriginal().toString();
-    }
-
-    public String getAtomicProposition() {
-        return rootLiteral.toSafePropName();
     }
 }
