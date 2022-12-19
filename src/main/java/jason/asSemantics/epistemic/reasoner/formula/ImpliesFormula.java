@@ -34,7 +34,7 @@ public class ImpliesFormula extends Formula {
 
     @Override
     public String toPropString() {
-        return antecedent.toPropString() + " " +  SYMBOL + " " + consequent.toPropString();
+        return "(" + antecedent.toPropString() + " " +  SYMBOL + " " + consequent.toPropString() + ")";
     }
 
     @Override

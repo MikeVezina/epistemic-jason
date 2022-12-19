@@ -15,6 +15,8 @@ import org.apache.http.impl.client.HttpClients;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.util.*;
 import java.util.function.Function;
@@ -42,7 +44,14 @@ public class EpistemicReasoner {
     }
 
 
-    public void createModel(Set<Formula> constraints) {
+    public boolean createModel(Set<Formula> constraints) {
+        metricsLogger.info("Creating model with " + constraints.size() + " constraints");
+
+        dumpConstraints(constraints);
+
+        if(!constraints.isEmpty())
+            return true;
+
         // Maybe have the managed worlds object be event-driven for information updates.
         JsonObject managedJson = new JsonObject();
         managedJson.add("constraints", StringListToJsonArray(constraints));
@@ -52,19 +61,47 @@ public class EpistemicReasoner {
         else {
 //            LOGGER.info("Model Creation (Req. Body): " + managedJson.toString());
         }
-        metricsLogger.info("Creating model with " + constraints.size() + " constraints");
 
         long initialTime = System.nanoTime();
+
+
+        var jsonBody = managedJson.toString();
+
         var request = RequestBuilder
                 .post(reasonerConfiguration.getModelCreateEndpoint())
-                .setEntity(new StringEntity(managedJson.toString(), ContentType.APPLICATION_JSON))
+                .setEntity(new StringEntity(jsonBody, ContentType.APPLICATION_JSON))
                 .build();
 
-        var resp = sendRequest(request, true);
-        LOGGER.info("Model Post Response: " + resp.getStatusLine().toString());
+        LOGGER.info("Sending Model Creation Request");
+        try (var resp = sendRequest(request, true)) {
+            LOGGER.info("Model Post Response: " + resp.getStatusLine().toString());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
 
         long creationTime = System.nanoTime() - initialTime;
         metricsLogger.info("Model creation time (ms): " + (creationTime / NS_PER_MS));
+        return true;
+    }
+
+    private void dumpConstraints(Set<Formula> constraints) {
+        String fileName = "constraints_" + constraints.size() + ".json";
+        System.out.println("Failed to create model (too many constraints). Dumping to file: " + fileName);
+        try (FileWriter fw = new FileWriter(fileName, false)) {
+//                fw.write("[");
+            int conSize = constraints.size();
+            for (var c : constraints) {
+                fw.write(c.toJson().toString());
+//                    if(conSize > 1)
+//                        fw.write(",");
+                fw.write("\r\n");
+                conSize--;
+            }
+//                fw.write("]");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
     }
 
     private static JsonArray StringListToJsonArray(Set<Formula> constraints) {
@@ -77,8 +114,7 @@ public class EpistemicReasoner {
         var json = new JsonObject();
         var arr = new JsonArray();
 
-        for(var entry : eventModel.getDelEvents())
-        {
+        for (var entry : eventModel.getDelEvents()) {
             var entryJson = new JsonObject();
 
             entryJson.add("id", new JsonPrimitive(entry.getEventId()));
@@ -87,7 +123,7 @@ public class EpistemicReasoner {
 
             var jsonPost = new JsonObject();
 
-            for(var postEntry : entry.getPostCondition().entrySet()) {
+            for (var postEntry : entry.getPostCondition().entrySet()) {
                 jsonPost.add(postEntry.getKey().toPropString(), postEntry.getValue().toJson());
             }
 
@@ -264,7 +300,8 @@ public class EpistemicReasoner {
      * @param <R>
      * @return
      */
-    private <R> R sendRequest(HttpUriRequest request, @NotNull Function<CloseableHttpResponse, R> responseProcessFunc) {
+    private <R> R
+    sendRequest(HttpUriRequest request, @NotNull Function<CloseableHttpResponse, R> responseProcessFunc) {
         try (var res = sendRequest(request, false)) {
             return responseProcessFunc.apply(res);
         } catch (IOException e) {

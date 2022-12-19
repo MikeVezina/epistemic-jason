@@ -40,7 +40,7 @@ public class AndFormula extends Formula {
         for(var f : formulaList)
             formStrings.add(f.toPropString());
 
-        return String.join(" " + FORM_TYPE + " ", formStrings);
+        return "(" + String.join(" " + FORM_TYPE + " ", formStrings) + ")";
     }
 
     @Override

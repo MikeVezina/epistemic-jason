@@ -31,9 +31,27 @@ public class EpistemicExtension implements Propositionalizer {
     public void modelCreateSem() {
         if (modelCreated) return;
 
+        long startTime = System.nanoTime();
         Set<Formula> constraints = getModelCreationConstraints();
+        long endConstraintTime = System.nanoTime();
 
-        reasoner.createModel(constraints);
+        this.ts.getAg().getLogger().info("Constraint Consequences Time (ms): " + ((endConstraintTime - startTime)/1000000));
+
+
+        boolean result = reasoner.createModel(constraints);
+        long endGenerationTime = System.nanoTime();
+
+        this.ts.getAg().getLogger().info("Model Generation Time (ms): " + ((endGenerationTime - endConstraintTime)/1000000));
+        this.ts.getAg().getLogger().info("Total Model Creation Time (ms): " + ((endGenerationTime - startTime)/1000000));
+        if (!result) {
+            this.ts.getAg().getLogger().info("Failed to create epistemic model from constraints");
+        }
+
+        this.ts.getAg().setBB(new ChainedEpistemicBB(groundingBase, reasoner));
+
+        // Update agent to use epistemic BB
+//        if(result)
+//            this.ts.getAg().setBB(new EpistemicBeliefBase(reasoner));
 
         modelCreated = true;
     }
@@ -44,9 +62,14 @@ public class EpistemicExtension implements Propositionalizer {
         // Add initial beliefs to constraints
         this.ts.getAg().getBB().forEach(l -> {
 
-            // Do not include percepts in the initial model -- these are captured by event models
-            if (!l.isRule() && l.getNS() == Literal.DefaultNS && !l.hasSource(new Atom("percept")))
-                constraints.add(propLit(l));
+
+            if (!l.isRule() && l.getNS() == Literal.DefaultNS) {
+                groundingBase.add(l);
+
+                // Do not include percepts in the initial model -- these are captured by event models
+                if (!l.hasSource(new Atom("percept")))
+                    constraints.add(propLit(l));
+            }
         });
 
         // Process rule semantics
@@ -54,11 +77,17 @@ public class EpistemicExtension implements Propositionalizer {
 
         // Load range rule constraints
         constraints.addAll(getRangeConstraints(allRules));
+        int rangeCons = constraints.size();
+        System.out.println("Range Constraints: " + rangeCons);
 
         constraints.addAll(getSingleConstraints(allRules));
+        int singleConstraints = constraints.size() - rangeCons;
+        System.out.println("Single Constraints: " + singleConstraints);
 
         // Load initial beliefs and
         constraints.addAll(getRuleConstraints(allRules));
+        int stdCons = constraints.size() - singleConstraints - rangeCons;
+        System.out.println("Standard Rule Constraints: " + stdCons);
 
         return constraints;
     }
@@ -68,12 +97,12 @@ public class EpistemicExtension implements Propositionalizer {
         List<Rule> singleRules = allRules.stream().filter(r -> r.getPredicateIndicator().equals(SINGLE_PRED_IND)).collect(Collectors.toList());
 
         // Map each rule to its constraint
-        return singleRules.stream().map(this::interpretSingle).reduce((l1, l2) -> {
-            var newList = new HashSet<Formula>();
-            newList.addAll(l1);
-            newList.addAll(l2);
-            return newList;
-        }).orElse(new HashSet<>());
+        Set<Formula> constraints = new HashSet<>();
+
+        for(var r : singleRules)
+            constraints.addAll(interpretSingle(r));
+
+        return constraints;
     }
 
     public void modelUpdateSem() throws JasonException {
@@ -140,13 +169,13 @@ public class EpistemicExtension implements Propositionalizer {
         Plan unifPlan = option.getPlan().capply(option.getUnifier());
 
         // Only process context when non-null
-        if(unifPlan.getContext() != null) {
+        if (unifPlan.getContext() != null) {
             Formula propPrecondition = pareAndProp(unifPlan.getContext());
             ev.setPreCondition(propPrecondition);
         }
 
         PlanBody cur = unifPlan.getBody();
-        while (cur != null) {
+        while (cur != null && cur.getBodyTerm() != null) {
             if (!cur.getBodyTerm().isLiteral()) {
                 cur = cur.getBodyNext();
                 continue;
@@ -241,11 +270,10 @@ public class EpistemicExtension implements Propositionalizer {
         List<Rule> standardRulesList = standardRuleStm.collect(Collectors.toList());
 
         // Map all rules to their ground consequences, then reduce (join) them into a single set
-        Set<Literal> allGroundRules = standardRulesList.stream().map(this::getGroundConsequences).reduce((r1, r2) -> {
-            Set<Literal> joined = new HashSet<>(r1);
-            joined.addAll(r2);
-            return joined;
-        }).orElse(new HashSet<>());
+        Set<Literal> allGroundRules = new HashSet<>();
+
+        for(var lit : standardRulesList)
+            allGroundRules.addAll(getGroundConsequences(lit));
 
         Map<Literal, Set<LogicalFormula>> headToBodyMap = new HashMap<>();
 
@@ -282,7 +310,7 @@ public class EpistemicExtension implements Propositionalizer {
 
 
         // Create sentences for equivalences
-        ruleConstraints.addAll(headToBodyMap.entrySet().stream().map(this::interpretStandardEquivalence).collect(Collectors.toList()));
+        ruleConstraints.addAll(headToBodyMap.entrySet().stream().map(this::interpretStandardEquivalence).collect(Collectors.toSet()));
 
         return ruleConstraints;
     }
@@ -294,7 +322,7 @@ public class EpistemicExtension implements Propositionalizer {
 
         Formula head = propLit(literalSetEntry.getKey());
 
-        return new EquivFormula(head, bodyDisjunc);
+        return new ImpliesFormula(head, bodyDisjunc);
     }
 
     private Formula interpretRuleConstraint(Rule r) {
@@ -392,11 +420,12 @@ public class EpistemicExtension implements Propositionalizer {
         List<Rule> rangeRules = allRules.stream().filter(r -> r.getPredicateIndicator().equals(RANGE_PRED_IND)).collect(Collectors.toList());
 
         // Map each rule to its constraint
-        return rangeRules.stream().map(this::interpretRange).reduce((r1, r2) -> {
-            Set<Formula> joined = new HashSet<>(r1);
-            joined.addAll(r2);
-            return joined;
-        }).orElse(new HashSet<>());
+        Set<Formula> constraints = new HashSet<>();
+
+        for(var r : rangeRules)
+            constraints.addAll(interpretRange(r));
+
+         return constraints;
     }
 
     private Set<Formula> interpretRange(Rule r) {
@@ -448,23 +477,37 @@ public class EpistemicExtension implements Propositionalizer {
 
         if (ground.isEmpty()) return new HashSet<>();
 
-        Set<Formula> groundProp = ground.stream().map(this::prop).collect(Collectors.toSet());
 
         Set<Formula> singleConstraints = new HashSet<>();
 
+
+        // Individual implies formulas created too many formulas!
+
+        Set<Formula> groundProp = ground.stream().map(this::prop).collect(Collectors.toSet());
         singleConstraints.add(createDisjunction(groundProp));
 
+//        List<Formula> allForm = new ArrayList<>();
+
+
         for (var g : ground) {
+            var curForms = new ArrayList<Formula>();
+            curForms.add(prop(g));
+
             for (var g2 : ground) {
                 if (g == g2) continue;
-                singleConstraints.add(new ImpliesFormula(prop(g), new NotFormula(prop(g2))));
+                curForms.add(new NotFormula(prop(g2)));
             }
+//            singleConstraints.add(new ImpliesFormula(prop(g), new NotFormula(prop(g2))));
+//            singleConstraints.add(new EquivFormula(prop(g), new AndFormula(curForms)));
+            singleConstraints.add(new ImpliesFormula(prop(g), new AndFormula(curForms)));
         }
 
 //        String csProps = ground.stream().map(this::prop).collect(Collectors.joining(", "));
 //        return "exact(1, [" + csProps + "])";
 
+
         return singleConstraints;
+//        return Set.of(new OrFormula(singleConstraints));
     }
 
     private Set<Literal> getGroundConsequences(Literal l) {

@@ -1,7 +1,9 @@
 package jason.asSemantics.epistemic.reasoner.formula;
 
 //import epistemic.wrappers.Literal;
+
 import jason.asSemantics.Unifier;
+import jason.asSyntax.ASSyntax;
 import jason.asSyntax.Literal;
 import jason.asSyntax.LiteralImpl;
 
@@ -36,6 +38,17 @@ public abstract class EpistemicFormula {
         uuid = UUID.randomUUID();
     }
 
+    public static EpistemicFormula CreateFormula(EpistemicModality epistemicModality, Literal next) {
+        switch (epistemicModality) {
+            case KNOW -> {
+                return new KnowEpistemicFormula(next);
+            }
+            /*case POSSIBLE */ default -> {
+                return new PossibleEpistemicFormula(ASSyntax.createLiteral(EpistemicModality.POSSIBLE.getFunctor(), next));
+            }
+        }
+    }
+
     protected abstract boolean getModalityNegated();
 
     protected abstract Literal processRootLiteral(Literal originalLiteral);
@@ -61,7 +74,7 @@ public abstract class EpistemicFormula {
     public static EpistemicFormula fromLiteral(Literal originalLiteral) {
         Literal copyOriginal = originalLiteral.copy();
 
-        if(EpistemicModality.POSSIBLE.isFunctor(copyOriginal.getFunctor()))
+        if (EpistemicModality.POSSIBLE.isFunctor(copyOriginal.getFunctor()))
             return new PossibleEpistemicFormula(copyOriginal);
         else
             return new KnowEpistemicFormula(copyOriginal);
@@ -80,8 +93,7 @@ public abstract class EpistemicFormula {
         return curLit != null && EpistemicModality.findFunctor(curLit.getFunctor()) != null && curLit.getArity() == 1;
     }
 
-    public String getUniqueId()
-    {
+    public String getUniqueId() {
         return this.uuid.toString();
     }
 
@@ -96,11 +108,11 @@ public abstract class EpistemicFormula {
 
     /**
      * Applies the unifier to the current formula
+     *
      * @param unifier The unifier with the corresponding variable values
      * @return A new epistemic formula object with the unified values.
      */
-    public EpistemicFormula capply(Unifier unifier)
-    {
+    public EpistemicFormula capply(Unifier unifier) {
         Literal applied = (Literal) getCleanedOriginal().capply(unifier);
         applied.resetHashCodeCache();
         return EpistemicFormula.fromLiteral(applied);
@@ -109,7 +121,7 @@ public abstract class EpistemicFormula {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (! (o instanceof EpistemicFormula)) return false;
+        if (!(o instanceof EpistemicFormula)) return false;
         EpistemicFormula that = (EpistemicFormula) o;
         return modalityNegated == that.modalityNegated && propositionNegated == that.propositionNegated && rootLiteral.equals(that.rootLiteral) && modality == that.modality;
     }

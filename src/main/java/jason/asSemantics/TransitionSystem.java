@@ -80,7 +80,7 @@ public class TransitionSystem implements Serializable {
 
     private List<GoalListener> goalListeners = null;
 
-    private EpistemicExtension epistemic;
+    private final EpistemicExtension epistemic;
 
     private Queue<RunnableSerializable> taskForBeginOfCycle = new ConcurrentLinkedQueue<>();
 
@@ -120,6 +120,11 @@ public class TransitionSystem implements Serializable {
         else
             logger = Logger.getLogger(TransitionSystem.class.getName());
     }
+
+    public EpistemicExtension getEpistemic() {
+        return epistemic;
+    }
+
 
     public void setLogger(Logger l) {
         logger = l;
@@ -231,7 +236,7 @@ public class TransitionSystem implements Serializable {
         switch (stepDeliberate) {
             case CrModel:
                 this.epistemic.modelCreateSem();
-                stepDeliberate = State.UpModel;
+                stepDeliberate = State.StartRC;
                 break;
             case UpModel:
                 this.epistemic.modelUpdateSem();
@@ -1698,6 +1703,9 @@ public class TransitionSystem implements Serializable {
     /**********************************************************************/
 
     public void reasoningCycle() {
+        // Create model (only if not created)
+        this.epistemic.modelCreateSem();
+
         sense();
         deliberate();
         act();
@@ -1754,7 +1762,7 @@ public class TransitionSystem implements Serializable {
             }
 
             // Override initial step to model creation (which skips if already created)
-            stepDeliberate = State.CrModel;
+            stepDeliberate = State.UpModel;
             // stepDeliberate = State.SelEv;
             do {
                 applySemanticRuleDeliberate();
