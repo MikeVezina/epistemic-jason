@@ -28,8 +28,25 @@ public class EpistemicExtension implements Propositionalizer {
         this.reasoner = new EpistemicReasoner(this);
     }
 
+
+
     public void modelCreateSem() {
         if (modelCreated) return;
+
+
+        /*
+            New Model Creation:
+            - Add ground range propositions to Prop set
+            - Add ground belief props to Prop set
+            - managed = { ...+X, +~X for all ground range(X), ...ground initial beliefs }
+            - Gather all constraint rules for X :- ... and ~X :- ... (for all range(X))
+            - Define "Rewrite" function that rewrites (and simultaneously grounds) a formula in terms of 'managed' lits (using rules defined by agent).
+            - Constraint rules -> "Rewrite" -> propositionalize -> Add to Prop Set
+            - Create model using prop set
+
+         */
+
+
 
         long startTime = System.nanoTime();
         Set<Formula> constraints = getModelCreationConstraints();
@@ -170,7 +187,7 @@ public class EpistemicExtension implements Propositionalizer {
 
         // Only process context when non-null
         if (unifPlan.getContext() != null) {
-            Formula propPrecondition = pareAndProp(unifPlan.getContext());
+            Formula propPrecondition = simplifyAndProp(unifPlan.getContext());
             ev.setPreCondition(propPrecondition);
         }
 
@@ -287,7 +304,7 @@ public class EpistemicExtension implements Propositionalizer {
             if (!headToBodyMap.containsKey(head)) headToBodyMap.put(head, new HashSet<>());
 
             // Pare body down
-            LogicalFormula paredBody = (LogicalFormula) pare(body);
+            LogicalFormula paredBody = (LogicalFormula) simplify(body);
 
             headToBodyMap.get(head).add(paredBody);
 
@@ -318,7 +335,7 @@ public class EpistemicExtension implements Propositionalizer {
     private Formula interpretStandardEquivalence(Map.Entry<Literal, Set<LogicalFormula>> literalSetEntry) {
 
         // 1 Create a disjunction of all possible bodies
-        Formula bodyDisjunc = createDisjunction(literalSetEntry.getValue().stream().map(this::pareAndProp).collect(Collectors.toSet()));
+        Formula bodyDisjunc = createDisjunction(literalSetEntry.getValue().stream().map(this::simplifyAndProp).collect(Collectors.toSet()));
 
         Formula head = propLit(literalSetEntry.getKey());
 
@@ -335,7 +352,7 @@ public class EpistemicExtension implements Propositionalizer {
         // Map into pairs of propositionalized (ground body -> ground head)
         // TODO: Note that rule body may not be ground!
         List<List<Term>> implicationLists = ground.stream().map(l -> (Rule) l) // Map each lit to a rule
-                .map(rule -> List.of(pare(rule.getHead()), pare(rule.getBody()))).collect(Collectors.toList());
+                .map(rule -> List.of(simplify(rule.getHead()), simplify(rule.getBody()))).collect(Collectors.toList());
 
         // Insert all other initial beliefs:
         for (Literal bel : ts.getAg().getInitialBels()) {
@@ -410,8 +427,8 @@ public class EpistemicExtension implements Propositionalizer {
 //        return "(" + prop(pared.getLHS()) + " " + pared.getOp().toString() + " " + prop(pared.getRHS()) + ")";
     }
 
-    private Formula pareAndProp(Term unpared) {
-        return prop(pare(unpared));
+    private Formula simplifyAndProp(Term unpared) {
+        return prop(simplify(unpared));
     }
 
 
@@ -548,15 +565,15 @@ public class EpistemicExtension implements Propositionalizer {
     }
 
 
-    private Term pare(Term t) {
+    private Term simplify(Term t) {
         if (!t.isGround()) throw new RuntimeException("Term must be ground to be pared: " + t);
 
-        if (t instanceof LogExpr) return pareExpr((LogExpr) t);
+        if (t instanceof LogExpr) return simplifyExpr((LogExpr) t);
 
         // Terms that simplify to true, e.g. rel expr (5 = 5), int actions (.member(5, [1, 5]))
         if (t instanceof RelExpr || t instanceof InternalActionLiteral) return Literal.LTrue;
 
-        if (t instanceof Literal) return pareLit((Literal) t);
+        if (t instanceof Literal) return simplifyLit((Literal) t);
 
 //        if (t instanceof LogicalFormula)
 //            return pareForm((LogicalFormula) t);
@@ -569,23 +586,23 @@ public class EpistemicExtension implements Propositionalizer {
      * l1 & l2 => pare(l1) & pare(l2)
      * l1 & l2 => if (pare(l1) & LTrue) OR (LTrue & pare(l2)) or
      */
-    private Term pareExpr(LogExpr t) {
+    private Term simplifyExpr(LogExpr t) {
         if (t.getOp() == LogExpr.LogicalOp.and) {
-            var formLeft = (LogicalFormula) pare(t.getLHS());
-            var formRight = (LogicalFormula) pare(t.getRHS());
+            var formLeft = (LogicalFormula) simplify(t.getLHS());
+            var formRight = (LogicalFormula) simplify(t.getRHS());
 
             if (formLeft == Literal.LTrue) return formRight;
 
             if (formRight == Literal.LTrue) return formLeft;
 
-            // Otherwise, return pared expression.
+            // Otherwise, return simplified expression.
             return new LogExpr(formLeft, LogExpr.LogicalOp.and, formRight);
         }
 
 
         if (t.getOp() == LogExpr.LogicalOp.or) {
-            var formLeft = (LogicalFormula) pare(t.getLHS());
-            var formRight = (LogicalFormula) pare(t.getRHS());
+            var formLeft = (LogicalFormula) simplify(t.getLHS());
+            var formRight = (LogicalFormula) simplify(t.getRHS());
 
             if (formLeft == Literal.LFalse) return formRight;
 
@@ -608,7 +625,7 @@ public class EpistemicExtension implements Propositionalizer {
         }
     }
 
-    private Literal pareLit(Literal lit) {
+    private Literal simplifyLit(Literal lit) {
         if (lit.isGround()) return lit;
         // if lit is not ground, return false lit
         // This covers case of possible disjunction in log expr: x(1, 2) OR y(A, Z)

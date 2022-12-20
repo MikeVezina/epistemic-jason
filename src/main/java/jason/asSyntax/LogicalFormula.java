@@ -1,6 +1,7 @@
 package jason.asSyntax;
 
 import jason.asSemantics.Agent;
+import jason.asSemantics.RewriteUnifier;
 import jason.asSemantics.Unifier;
 
 import java.util.Iterator;
@@ -21,5 +22,12 @@ public interface LogicalFormula extends Term, Cloneable {
      * Returns an iterator for all unifiers that are consequence.
      */
     public Iterator<Unifier> logicalConsequence(Agent ag, Unifier un);
+
+    /**
+     * Rewrites the formula strictly in terms of ground belief literals, true, and/or false.
+     * To do this, we must simultaneously evaluate and rewrite.
+     * The end result is a ground formula, written in terms of the given literal set.
+     */
+    Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un);
 
 }

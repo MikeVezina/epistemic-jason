@@ -1,11 +1,14 @@
 package jason.asSyntax;
 
 import jason.asSemantics.Agent;
+import jason.asSemantics.RewriteUnifier;
 import jason.asSemantics.Unifier;
 import jason.asSyntax.parser.as2j;
 
 import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -84,6 +87,25 @@ public class RelExpr extends BinaryStructure implements LogicalFormula {
     public RelExpr(Term t1, RelationalOp oper, Term t2) {
         super(t1,oper.toString(),t2);
         op = oper;
+    }
+
+    @Override
+    public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
+        var iter = logicalConsequence(ag, un);
+
+        if (iter == null || !iter.hasNext())
+            return EMPTY_REWRITE_UNIF_LIST.iterator();
+
+        // (For RelExp): If the logical consequences have a unifier, the expression is true.
+        List<RewriteUnifier> list = new ArrayList<>();
+
+        while(iter.hasNext())
+        {
+            Unifier unif = iter.next();
+            list.add(new RewriteUnifier((RelExpr) this.capply(unif), unif));
+        }
+
+        return list.iterator();
     }
 
     public Iterator<Unifier> logicalConsequence(final Agent ag, Unifier un) {

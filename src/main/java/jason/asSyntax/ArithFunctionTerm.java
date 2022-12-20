@@ -3,6 +3,7 @@ package jason.asSyntax;
 import jason.NoValueException;
 import jason.asSemantics.Agent;
 import jason.asSemantics.ArithFunction;
+import jason.asSemantics.RewriteUnifier;
 import jason.asSemantics.Unifier;
 
 import java.util.Iterator;
@@ -120,6 +121,11 @@ public class ArithFunctionTerm extends Structure implements NumberTerm {
     public Iterator<Unifier> logicalConsequence(Agent ag, Unifier un)  {
         logger.log(Level.WARNING, "Arithmetic term cannot be used for logical consequence! "+getErrorMsg());
         return LogExpr.EMPTY_UNIF_LIST.iterator();
+    }
+
+    @Override
+    public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
+        return super.rewriteConsequences(ag, un);
     }
 
     @Override

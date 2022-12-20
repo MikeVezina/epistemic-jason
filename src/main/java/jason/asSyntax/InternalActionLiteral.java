@@ -1,10 +1,13 @@
 package jason.asSyntax;
 
+import java.util.ArrayList;
 import java.util.ConcurrentModificationException;
 import java.util.Iterator;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import jason.asSemantics.RewriteUnifier;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -15,10 +18,9 @@ import jason.stdlib.puts;
 
 
 /**
- A particular type of literal used to represent internal actions (which has a "." in the functor).
-
- @navassoc - ia - InternalAction
-
+ * A particular type of literal used to represent internal actions (which has a "." in the functor).
+ *
+ * @navassoc - ia - InternalAction
  */
 public class InternalActionLiteral extends Structure implements LogicalFormula {
 
@@ -45,7 +47,7 @@ public class InternalActionLiteral extends Structure implements LogicalFormula {
 
     // used by cloneNS
     private InternalActionLiteral(Atom ns, InternalActionLiteral l) {
-        super(ns, (Structure)l);
+        super(ns, (Structure) l);
         this.ia = l.ia;
     }
 
@@ -53,6 +55,7 @@ public class InternalActionLiteral extends Structure implements LogicalFormula {
     public InternalActionLiteral(Structure p, Agent ag) throws Exception {
         this(DefaultNS, p, ag);
     }
+
     public InternalActionLiteral(Atom ns, Structure p, Agent ag) throws Exception {
         super(ns, p);
         if (ag != null)
@@ -71,12 +74,33 @@ public class InternalActionLiteral extends Structure implements LogicalFormula {
 
     @Override
     public Literal makeVarsAnnon(Unifier un) {
-        Literal t =  super.makeVarsAnnon(un);
+        Literal t = super.makeVarsAnnon(un);
         if (t.getFunctor().equals(".puts")) { // vars inside strings like in .puts("bla #{X}") should be also replace
             // TODO: should it work for any string? if so, proceed this replacement inside StringTermImpl
-            ((puts)puts.create()).makeVarsAnnon(t,un);
+            ((puts) puts.create()).makeVarsAnnon(t, un);
         }
         return t;
+    }
+
+    @Override
+    public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
+        var iter = logicalConsequence(ag, un);
+        if (iter == null)
+            return EMPTY_REWRITE_UNIF_LIST.iterator();
+
+
+        List<RewriteUnifier> list = new ArrayList<>();
+
+//        if (!iter.hasNext())
+//            list.add(new RewriteUnifier(LTrue, un));
+
+        while(iter.hasNext())
+        {
+            list.add(new RewriteUnifier(LTrue, iter.next()));
+        }
+
+        return list.iterator();
+
     }
 
     @SuppressWarnings("unchecked")
@@ -85,42 +109,48 @@ public class InternalActionLiteral extends Structure implements LogicalFormula {
             try {
                 InternalAction ia = getIA(ag);
                 if (!ia.canBeUsedInContext()) {
-                    logger.log(Level.SEVERE, getErrorMsg() + ": internal action "+getFunctor()+" cannot be used in context or rules!");
+                    logger.log(Level.SEVERE, getErrorMsg() + ": internal action " + getFunctor() + " cannot be used in context or rules!");
                     return LogExpr.EMPTY_UNIF_LIST.iterator();
                 }
                 // calls IA's execute method
                 Object oresult = ia.execute(ag.getTS(), un, ia.prepareArguments(this, un));
                 if (oresult instanceof Boolean) {
-                    if ((Boolean)oresult) {
-                        if (ag.getLogger().isLoggable(Level.FINE)) ag.getLogger().log(Level.FINE, "     | internal action "+this+" executed "+ " -- "+un);
+                    if ((Boolean) oresult) {
+                        if (ag.getLogger().isLoggable(Level.FINE))
+                            ag.getLogger().log(Level.FINE, "     | internal action " + this + " executed " + " -- " + un);
                         return LogExpr.createUnifIterator(un);
                     } else {
-                        if (ag.getLogger().isLoggable(Level.FINE)) ag.getLogger().log(Level.FINE, "     | internal action "+this+" failed "+ " -- "+un);
+                        if (ag.getLogger().isLoggable(Level.FINE))
+                            ag.getLogger().log(Level.FINE, "     | internal action " + this + " failed " + " -- " + un);
                     }
                 } else if (oresult instanceof Iterator) {
                     //if (kForChache == null) {
                     if (ag.getLogger().isLoggable(Level.FINE)) {
                         return new Iterator<Unifier>() {
-                            @Override public boolean hasNext() {
+                            @Override
+                            public boolean hasNext() {
                                 return ((Iterator<Unifier>) oresult).hasNext();
                             }
-                            @Override public Unifier next() {
+
+                            @Override
+                            public Unifier next() {
                                 Unifier r = ((Iterator<Unifier>) oresult).next();
-                                ag.getLogger().log(Level.FINE, "     | internal action "+InternalActionLiteral.this+" option "+ " -- "+r);
+                                ag.getLogger().log(Level.FINE, "     | internal action " + InternalActionLiteral.this + " option " + " -- " + r);
                                 return r;
                             }
                         };
                     } else {
-                        return ((Iterator<Unifier>)oresult);
+                        return ((Iterator<Unifier>) oresult);
                     }
                 }
             } catch (ConcurrentModificationException e) {
-                System.out.println("*-*-* "+getFunctor()+" concurrent exception - try later");
+                System.out.println("*-*-* " + getFunctor() + " concurrent exception - try later");
                 e.printStackTrace();
                 // try again later
                 try {
                     Thread.sleep(200);
-                } catch (InterruptedException e1) {                }
+                } catch (InterruptedException e1) {
+                }
                 return logicalConsequence(ag, un);
             } catch (Exception e) {
                 logger.log(Level.SEVERE, getErrorMsg() + ": " + e.getMessage(), e);
@@ -141,8 +171,8 @@ public class InternalActionLiteral extends Structure implements LogicalFormula {
 
     @Override
     public String getErrorMsg() {
-        String src = getSrcInfo() == null ? "" : " ("+ getSrcInfo() + ")";
-        return "Error in internal action '"+this+"'"+ src;
+        String src = getSrcInfo() == null ? "" : " (" + getSrcInfo() + ")";
+        return "Error in internal action '" + this + "'" + src;
     }
 
     @Override
@@ -159,11 +189,13 @@ public class InternalActionLiteral extends Structure implements LogicalFormula {
         return new InternalActionLiteral(newnamespace, this);
     }
 
-    /** get as XML */
+    /**
+     * get as XML
+     */
     @Override
     public Element getAsDOM(Document document) {
         Element u = super.getAsDOM(document);
-        u.setAttribute("ia", isInternalAction()+"");
+        u.setAttribute("ia", isInternalAction() + "");
         return u;
     }
 }

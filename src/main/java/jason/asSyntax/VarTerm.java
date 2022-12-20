@@ -2,6 +2,7 @@ package jason.asSyntax;
 
 import jason.NoValueException;
 import jason.asSemantics.Agent;
+import jason.asSemantics.RewriteUnifier;
 import jason.asSemantics.Unifier;
 import jason.asSyntax.parser.as2j;
 
@@ -214,6 +215,11 @@ public class VarTerm extends LiteralImpl implements NumberTerm, ListTerm { //, S
             // the clone is still a var
             return ((LogicalFormula)t).logicalConsequence(ag, un);
         }
+    }
+
+    @Override
+    public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
+        return super.rewriteConsequences(ag, un);
     }
 
     @Override
