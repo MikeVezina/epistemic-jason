@@ -219,7 +219,15 @@ public class VarTerm extends LiteralImpl implements NumberTerm, ListTerm { //, S
 
     @Override
     public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
-        return super.rewriteConsequences(ag, un);
+        // try to apply
+        Term t = this.capply(un);
+        if (t.equals(this) ) {
+            // the variable is still a Var, find all bels that unify.
+            return super.rewriteConsequences(ag, un);
+        } else {
+            // the clone is still a var
+            return ((LogicalFormula)t).rewriteConsequences(ag, un);
+        }
     }
 
     @Override

@@ -11,8 +11,11 @@ import jason.bb.DefaultBeliefBase;
 import jason.runtime.Settings;
 import org.jetbrains.annotations.NotNull;
 
-import java.text.ParseException;
+import java.util.Iterator;
 import java.util.Set;
+
+import static jason.asSyntax.Literal.LFalse;
+import static jason.asSyntax.Literal.LTrue;
 
 public class Rewriter {
 
@@ -101,7 +104,15 @@ public class Rewriter {
     public static void main(String[] args) {
         try {
 
+            DefaultBeliefBase initialBeliefs = new DefaultBeliefBase();
+            initialBeliefs.add(ASSyntax.parseLiteral("~none"));
+
+
             DefaultBeliefBase defaultBeliefBase = new DefaultBeliefBase();
+
+            for (var b : initialBeliefs)
+                defaultBeliefBase.add(b);
+
             Agent a = new Agent();
             a.setBB(defaultBeliefBase);
 
@@ -116,24 +127,63 @@ public class Rewriter {
 
 //            a.getTS().getAgArch().isRunning();
 
+            // Range values (for grounding)
             defaultBeliefBase.add(ASSyntax.parseLiteral("loc(1)"));
+            defaultBeliefBase.add(ASSyntax.parseLiteral("~loc(1)"));
             defaultBeliefBase.add(ASSyntax.parseLiteral("loc(2)"));
-            defaultBeliefBase.add(ASSyntax.parseRule("loc(X) :- .member(X, [2]) | .member(X, [5, 6])."));
-            defaultBeliefBase.add(ASSyntax.parseRule("loc(3) :- loc(1) & loc(2)."));
-            defaultBeliefBase.add(ASSyntax.parseRule("loc(3) :- loc(1) & loc(2) & loc(2)."));
-            defaultBeliefBase.add(ASSyntax.parseRule("loc(4) :- loc(1) | loc(2)."));
-            defaultBeliefBase.add(ASSyntax.parseRule("loc(X) :- (X >= 10)."));
+            defaultBeliefBase.add(ASSyntax.parseLiteral("~loc(2)"));
+            defaultBeliefBase.add(ASSyntax.parseLiteral("loc(3)"));
+            defaultBeliefBase.add(ASSyntax.parseLiteral("~loc(3)"));
+            defaultBeliefBase.add(ASSyntax.parseLiteral("none"));
+            defaultBeliefBase.add(ASSyntax.parseLiteral("~none"));
 
-            LogicalFormula form = ASSyntax.parseFormula("loc(X) | not loc(Y)"); //ASSyntax.parseFormula("(not X & (not (.member(Y, [1, 2]))))");
+            // We need a way to 'expand' a conjunction, maybe using internal actions.
+
+            Unifier u = new Unifier();
+            u.bind(new VarTerm("Hi"), new LogExpr(LFalse, LogExpr.LogicalOp.and, LTrue));
+
+            Literal res = (Literal) ASSyntax.parseLiteral("test(Hi)").capply(u);
+
+            // defaultBeliefBase.add(ASSyntax.parseRule("range(loc(X)) :- .member(X, [1, 2, 3])."));
+            // defaultBeliefBase.add(ASSyntax.parseRule("loc(Z) :- .ground(Z) & .findall(~loc(X), range(loc(X)) & X \\== Z , List) & .big_and(Y, List) & Y."));
+            // defaultBeliefBase.add(ASSyntax.parseRule("~loc(Z) :- .ground(Z) & .findall(loc(X), range(loc(X)) & X \\== Z , List) & .big_or(Y, List) & Y."));
+
+            defaultBeliefBase.add(ASSyntax.parseRule("~loc(1) :- loc(2) | loc(3)."));
+            defaultBeliefBase.add(ASSyntax.parseRule("~loc(2) :- loc(1) | loc(3)."));
+            defaultBeliefBase.add(ASSyntax.parseRule("~loc(3) :- loc(1) | loc(2)."));
+            defaultBeliefBase.add(ASSyntax.parseRule("none :- not(loc(1)) & not(loc(2)) & not(loc(3))."));
+
+
+            // defaultBeliefBase.add(ASSyntax.parseRule("~loc(Z) :- .ground(Z) & .belief(~loc(X)) & X \\== Z."));
+            // defaultBeliefBase.add(ASSyntax.parseRule("~loc(30) :- .big_or(Y, [a, b, c]) & (X = (loc(1) | loc(2))) & Y."));
+            // defaultBeliefBase.add(ASSyntax.parseRule("~loc(X) :- .member(X, [1, 2, 3]) & .member(X2, [1, 2, 3]) & X \\== X2 & loc(X2)."));
+            //
+            // defaultBeliefBase.add(ASSyntax.parseRule("loc(3) :- loc(1) & loc(2)."));
+            // defaultBeliefBase.add(ASSyntax.parseRule("loc(3) :- loc(1) & loc(2) & loc(2)."));
+            // defaultBeliefBase.add(ASSyntax.parseRule("loc(4) :- loc(1) | loc(2)."));
+            // defaultBeliefBase.add(ASSyntax.parseRule("loc(X) :- (X = 10)."));
+            // defaultBeliefBase.add(ASSyntax.parseRule("loc(X) :- (X >= 10)."));
+
+            propRules(ASSyntax.parseLiteral("none"), defaultBeliefBase, a);
+            propRules(ASSyntax.parseLiteral("~none"), defaultBeliefBase, a);
+            propRules(ASSyntax.parseLiteral("loc(1)"), defaultBeliefBase, a);
+            propRules(ASSyntax.parseLiteral("~loc(1)"), defaultBeliefBase, a);
+            propRules(ASSyntax.parseLiteral("loc(2)"), defaultBeliefBase, a);
+            propRules(ASSyntax.parseLiteral("~loc(2)"), defaultBeliefBase, a);
+            propRules(ASSyntax.parseLiteral("loc(3)"), defaultBeliefBase, a);
+            propRules(ASSyntax.parseLiteral("~loc(3)"), defaultBeliefBase, a);
+
+
+            LogicalFormula form = ASSyntax.parseFormula("~loc(X)"); //ASSyntax.parseFormula("(not X & (not (.member(Y, [1, 2]))))");
+//            LogicalFormula form = ASSyntax.parseFormula("loc(X) | not loc(Y)"); //ASSyntax.parseFormula("(not X & (not (.member(Y, [1, 2]))))");
             System.out.println("Original: " + form);
 
 //            var r = new Rewriter(null, null);
 //            var newForm = r.rewrite(form);
 
-            var cons = form.logicalConsequence(a, new Unifier());
+            Iterator<Unifier> cons = null; //form.logicalConsequence(a, new Unifier());
 
-            while(cons != null && cons.hasNext())
-            {
+            while (cons != null && cons.hasNext()) {
                 System.out.println(cons.next());
             }
 
@@ -141,15 +191,47 @@ public class Rewriter {
 
             while (iter != null && iter.hasNext()) {
                 var val = iter.next();
-//                System.out.println("Rewritten as: " + val);
-                System.out.println( form.capply(val.getUnifier()) + " rewritten as: " + val.getKey() + " --- with: " + val.getValue());
+                var result = (LogicalFormula) form.capply(val.getUnifier());
+                System.out.println(result + " rewritten as: " + val.getKey() + " --- with: " + val.getValue());
+                System.out.println(result + " simplified to: " + val.getKey().simplify());
+                System.out.println(result + " Prop: " + val.getKey().simplify().toPropFormula());
+                System.out.println("======");
             }
 //            newForm.logicalConsequence()
 
 //            System.out.println("Consequences: " + r.rewrite(form));
-        } catch (Exception pe)
-        {
+        } catch (Exception pe) {
             pe.printStackTrace();
+        }
+
+
+    }
+
+    private static void propRules(Literal lit, DefaultBeliefBase defaultBeliefBase, Agent a) throws Exception {
+        var res = defaultBeliefBase.getCandidateBeliefs(lit, new Unifier());
+
+        while(res != null && res.hasNext())
+        {
+            Literal next = res.next();
+            if(!next.isRule())
+                continue;
+
+            // Get rule
+            Rule r = (Rule) next;
+
+            var iter = r.getBody().rewriteConsequences(a, new Unifier());
+
+            // var clonedBody = (LogicalFormula) r.getBody().clone();
+
+            while (iter != null && iter.hasNext()) {
+                var val = iter.next();
+                var cOrig = (LogicalFormula) next.capply(val.getUnifier());
+                // clonedBody = (LogicalFormula) clonedBody.capply(val.getUnifier());
+                System.out.println(cOrig + " rewritten as: " + val.getFormula() + " --- with: " + val.getUnifier());
+                System.out.println("Prop: " + val.getFormula().simplify().toPropFormula() + " implies " + r.headCApply(val.getUnifier()));
+                System.out.println("======");
+            }
+
         }
 
 

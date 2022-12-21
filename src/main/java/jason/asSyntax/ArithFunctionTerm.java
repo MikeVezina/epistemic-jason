@@ -125,7 +125,8 @@ public class ArithFunctionTerm extends Structure implements NumberTerm {
 
     @Override
     public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
-        return super.rewriteConsequences(ag, un);
+        logger.log(Level.WARNING, "Arithmetic term cannot be used for rewrite consequence! "+getErrorMsg());
+        return LogExpr.EMPTY_REWRITE_UNIF_LIST.iterator();
     }
 
     @Override

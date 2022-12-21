@@ -82,21 +82,45 @@ public class InternalActionLiteral extends Structure implements LogicalFormula {
         return t;
     }
 
+    // handled by simplify
+//    @Override
+//    public Formula toPropFormula() {
+//        if(!this.isGround())
+//            return LFalse.toPropFormula();
+//
+//        // The expression has already been evaluated using log. consequences.
+//        // I.e., can be propositionalized as 'true'
+//        return LTrue.toPropFormula();
+//    }
+
+    @Override
+    public Literal simplify() {
+//        if(!this.isGround())
+//            return LFalse;
+
+        // The expression has already been evaluated using log. consequences.
+        // I.e., can be propositionalized as 'true'
+        return LTrue;
+    }
+
     @Override
     public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
         var iter = logicalConsequence(ag, un);
         if (iter == null)
             return EMPTY_REWRITE_UNIF_LIST.iterator();
 
-
         List<RewriteUnifier> list = new ArrayList<>();
-
-//        if (!iter.hasNext())
-//            list.add(new RewriteUnifier(LTrue, un));
 
         while(iter.hasNext())
         {
-            list.add(new RewriteUnifier(LTrue, iter.next()));
+            Unifier unif = iter.next();
+            InternalActionLiteral intC = (InternalActionLiteral) this.capply(unif);
+
+            // Only rewrite to true if it is ground (this depends on the IA, some will only ground the result term, leaving others unground)
+//            if(intC.isGround())
+            list.add(new RewriteUnifier(intC, unif));
+
+//            list.add(new RewriteUnifier(LTrue, iter.next()));
         }
 
         return list.iterator();

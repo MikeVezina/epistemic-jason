@@ -3,6 +3,10 @@ package jason.asSyntax;
 import jason.asSemantics.Agent;
 import jason.asSemantics.RewriteUnifier;
 import jason.asSemantics.Unifier;
+import jason.asSemantics.epistemic.reasoner.formula.AndFormula;
+import jason.asSemantics.epistemic.reasoner.formula.Formula;
+import jason.asSemantics.epistemic.reasoner.formula.NotFormula;
+import jason.asSemantics.epistemic.reasoner.formula.OrFormula;
 import jason.asSyntax.parser.as2j;
 
 import java.io.StringReader;
@@ -78,11 +82,78 @@ public class LogExpr extends BinaryStructure implements LogicalFormula {
         return (LogicalFormula) getTerm(1);
     }
 
+
+    @Override
+    public Formula toPropFormula() {
+        if(!this.isGround())
+            return LFalse.toPropFormula();
+
+        switch (getOp()) {
+            case not -> {
+                return new NotFormula(getLHS().toPropFormula());
+            }
+            case and -> {
+                return new AndFormula(getLHS().toPropFormula(), getRHS().toPropFormula());
+            }
+            case or -> {
+                return new OrFormula(getLHS().toPropFormula(), getRHS().toPropFormula());
+            }
+            default -> {
+                return getLHS().toPropFormula();
+            }
+        }
+    }
+
+    /**
+     * Simplifies the expression, if possible, to provide a more compact representation.
+     */
+    public Literal simplify()
+    {
+        if (getOp() == LogExpr.LogicalOp.and) {
+            var formLeft = getLHS().simplify();
+            var formRight = getRHS().simplify();
+
+            if (formLeft == Literal.LTrue) return formRight;
+
+            if (formRight == Literal.LTrue) return formLeft;
+
+            // Otherwise, return simplified expression.
+            return new LogExpr(formLeft, LogExpr.LogicalOp.and, formRight);
+        }
+
+
+        if (getOp() == LogExpr.LogicalOp.or) {
+            var formLeft = getLHS().simplify();
+            var formRight = getRHS().simplify();
+
+            if (formLeft == Literal.LFalse || !formLeft.isGround()) return formRight;
+
+            if (formRight == Literal.LFalse || !formRight.isGround()) return formLeft;
+
+            // Otherwise, return pared expression.
+            return new LogExpr(formLeft, LogExpr.LogicalOp.or, formRight);
+        }
+
+
+        if(getOp() == LogExpr.LogicalOp.not)
+        {
+            return new LogExpr(LogicalOp.not, getLHS().simplify());
+        }
+        else {
+            // E.g.: not(~test(X, Y)) = for all possible unifiers (X, Y), ~(~test(X, Y)) holds true
+            // Special case, where we need to potentially ground all literals
+            // More complicated: not(test(X, Y) & not(other(X, Z) OR other(Z, X)))
+            //      With gs = {test(1, 2), test(3, 4), test(5, 5), other(1, 4), other(4, 1), other(5, 5)}
+            //      Meaning => not([test(1, 2), test(3, 4), ] ???
+            // TODO: Handle this, but for now, we assume only strong negation in constraint rules... Handled I think?
+            throw new RuntimeException("Unsupported simplify for: " + getOp().toString());
+        }
+    }
+
     @Override
     public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
         try {
             switch (op) {
-
                 case none:
                     break;
 

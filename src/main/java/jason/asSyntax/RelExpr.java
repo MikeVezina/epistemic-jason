@@ -102,10 +102,35 @@ public class RelExpr extends BinaryStructure implements LogicalFormula {
         while(iter.hasNext())
         {
             Unifier unif = iter.next();
-            list.add(new RewriteUnifier((RelExpr) this.capply(unif), unif));
+            RelExpr expC = (RelExpr) this.capply(unif);
+
+            // Only rewrite to true if it is ground
+            if(expC.isGround())
+                list.add(new RewriteUnifier(expC, unif));
         }
 
         return list.iterator();
+    }
+
+    // Now handled by simplify
+//    @Override
+//    public Formula toPropFormula() {
+//        if(!this.isGround())
+//            return LFalse.toPropFormula();
+//
+//        // The expression has already been evaluated using log. consequences.
+//        // I.e., can be propositionalized as 'true'
+//        return LTrue.toPropFormula();
+//    }
+
+    @Override
+    public Literal simplify() {
+        if(!this.isGround())
+            return LFalse;
+
+        // The expression has already been evaluated using log. consequences.
+        // I.e., can be propositionalized as 'true'
+        return LTrue;
     }
 
     public Iterator<Unifier> logicalConsequence(final Agent ag, Unifier un) {

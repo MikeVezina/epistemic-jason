@@ -424,7 +424,6 @@ public class EpistemicExtension implements Propositionalizer {
             }
         }
 
-//        return "(" + prop(pared.getLHS()) + " " + pared.getOp().toString() + " " + prop(pared.getRHS()) + ")";
     }
 
     private Formula simplifyAndProp(Term unpared) {

@@ -14,6 +14,9 @@ import jason.architecture.AgArch;
 import jason.asSemantics.Agent;
 import jason.asSemantics.RewriteUnifier;
 import jason.asSemantics.Unifier;
+import jason.asSemantics.epistemic.reasoner.formula.Formula;
+import jason.asSemantics.epistemic.reasoner.formula.NotFormula;
+import jason.asSemantics.epistemic.reasoner.formula.PropFormula;
 import jason.asSyntax.parser.as2j;
 
 /**
@@ -443,6 +446,12 @@ public abstract class Literal extends DefaultTerm implements LogicalFormula {
 
     public static final List<RewriteUnifier> EMPTY_REWRITE_UNIF_LIST = Collections.emptyList();
 
+
+    @Override
+    public Literal simplify() {
+        return this;
+    }
+
     @Override
     public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
         final boolean isInDebug = ag.getLogger().isLoggable(Level.FINE);
@@ -593,6 +602,22 @@ public abstract class Literal extends DefaultTerm implements LogicalFormula {
                 } // while
             }
         };
+    }
+
+    @Override
+    public Formula toPropFormula() {
+        // An unground literal can not be propositionalized.
+        if (!this.isGround())
+            return LFalse.toPropFormula();
+
+        Literal simplified = (Literal) this.simplify();
+
+        Formula litFormula = new PropFormula(new Pred(simplified));
+
+        if (negated())
+            return new NotFormula(litFormula);
+
+        return litFormula;
     }
 
     /**
@@ -901,6 +926,18 @@ public abstract class Literal extends DefaultTerm implements LogicalFormula {
             return LogExpr.createUnifIterator(un);
         }
 
+        @Override
+        public Formula toPropFormula() {
+            return new PropFormula(new Pred(this));
+        }
+
+        @Override
+        public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
+            return List.of(
+                    new RewriteUnifier(LTrue, un)
+            ).iterator();
+        }
+
         protected Object readResolve() {
             return Literal.LTrue;
         }
@@ -928,9 +965,14 @@ public abstract class Literal extends DefaultTerm implements LogicalFormula {
         }
 
         @Override
+        public Formula toPropFormula() {
+            return new PropFormula(new Pred(this));
+        }
+
+        @Override
         public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
             return List.of(
-                    new RewriteUnifier((LogicalFormula) LFalse, un)
+                    new RewriteUnifier(LFalse, un)
             ).iterator();
         }
 

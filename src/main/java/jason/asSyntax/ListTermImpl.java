@@ -16,6 +16,7 @@ import javax.json.Json;
 import javax.json.JsonArrayBuilder;
 import javax.json.JsonValue;
 
+import jason.asSemantics.RewriteUnifier;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -258,6 +259,13 @@ public class ListTermImpl extends Structure implements ListTerm {
         logger.log(Level.WARNING, "ListTermImpl cannot be used for logical consequence!", new Exception());
         return LogExpr.EMPTY_UNIF_LIST.iterator();
     }
+
+    @Override
+    public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
+        logger.log(Level.WARNING, "ListTermImpl cannot be used for rewrite consequence!", new Exception());
+        return LogExpr.EMPTY_REWRITE_UNIF_LIST.iterator();
+    }
+
 
     public boolean isTail() {
         return next != null && next.isVar();
