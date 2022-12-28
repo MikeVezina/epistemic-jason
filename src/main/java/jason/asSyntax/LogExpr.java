@@ -85,7 +85,7 @@ public class LogExpr extends BinaryStructure implements LogicalFormula {
 
     @Override
     public Formula toPropFormula() {
-        if(!this.isGround())
+        if (!this.isGround())
             return LFalse.toPropFormula();
 
         switch (getOp()) {
@@ -107,8 +107,7 @@ public class LogExpr extends BinaryStructure implements LogicalFormula {
     /**
      * Simplifies the expression, if possible, to provide a more compact representation.
      */
-    public Literal simplify()
-    {
+    public Literal simplify() {
         if (getOp() == LogExpr.LogicalOp.and) {
             var formLeft = getLHS().simplify();
             var formRight = getRHS().simplify();
@@ -135,11 +134,9 @@ public class LogExpr extends BinaryStructure implements LogicalFormula {
         }
 
 
-        if(getOp() == LogExpr.LogicalOp.not)
-        {
+        if (getOp() == LogExpr.LogicalOp.not) {
             return new LogExpr(LogicalOp.not, getLHS().simplify());
-        }
-        else {
+        } else {
             // E.g.: not(~test(X, Y)) = for all possible unifiers (X, Y), ~(~test(X, Y)) holds true
             // Special case, where we need to potentially ground all literals
             // More complicated: not(test(X, Y) & not(other(X, Z) OR other(Z, X)))
@@ -167,16 +164,17 @@ public class LogExpr extends BinaryStructure implements LogicalFormula {
                         return createRewriteUnifIterator(new RewriteUnifier(LTrue, un));
                     }
                     // If there are consequences, we rewrite the formula(s) to include the consequences.
-                    List<RewriteUnifier> list = new ArrayList<>();
+                    // If x :- a or b, then "not x" should be replaced with "not (a or b)" rather than "not a" or "not b"
+
+                    // Create OR containing all consequences
+                    LogicalFormula curForm = cons.next().getFormula();
+
                     while (cons.hasNext()) {
-                        var next = cons.next();
-                        // list.add(new RewriteUnifier(new LogExpr(LogicalOp.not, next.getFormula()), next.getUnifier()));
-                        // I don't think we should return the 'not' formula unifiers. Jason does not do this, and it will impact the evaluation of later formulas.
-                        list.add(new RewriteUnifier(new LogExpr(LogicalOp.not, next.getFormula()), un));
+                        curForm = new LogExpr(cons.next().getFormula(), LogicalOp.or, curForm);
                     }
 
-                    return list.iterator();
-//                    break;
+                    // I don't think we should return the 'not' formula unifiers. Jason does not do this, and it will impact the evaluation of later formulas.
+                    return createRewriteUnifIterator(new RewriteUnifier(new LogExpr(LogicalOp.not, curForm), un));
 
                 case and:
                     return new Iterator<RewriteUnifier>() {
@@ -259,7 +257,7 @@ public class LogExpr extends BinaryStructure implements LogicalFormula {
             }
         } catch (Exception e) {
             String slhs = "is null ";
-            Iterator<Unifier> i = getLHS().logicalConsequence(ag, un);
+            Iterator<RewriteUnifier> i = getLHS().rewriteConsequences(ag, un);
             if (i != null) {
                 slhs = "";
                 while (i.hasNext()) {
@@ -270,7 +268,7 @@ public class LogExpr extends BinaryStructure implements LogicalFormula {
             }
             String srhs = "is null ";
             if (!isUnary()) {
-                i = getRHS().logicalConsequence(ag, un);
+                i = getRHS().rewriteConsequences(ag, un);
                 if (i != null) {
                     srhs = "";
                     while (i.hasNext()) {
@@ -281,7 +279,7 @@ public class LogExpr extends BinaryStructure implements LogicalFormula {
                 }
             }
 
-            logger.log(Level.SEVERE, "Error evaluating expression " + this + ". \nlhs elements=" + slhs + ". \nrhs elements=" + srhs, e);
+            logger.log(Level.SEVERE, "Error evaluating rewrite expression " + this + ". \nlhs elements=" + slhs + ". \nrhs elements=" + srhs, e);
         }
         return EMPTY_REWRITE_UNIF_LIST.iterator();  // empty iterator for unifier
     }

@@ -10,6 +10,7 @@ import java.util.Objects;
 
 public class PropFormula extends Formula {
     private static final String FORM_TYPE = "prop";
+
     private final Pred propLit;
 
     public PropFormula(Pred lit) {
@@ -24,6 +25,12 @@ public class PropFormula extends Formula {
         obj.add("prop", new JsonPrimitive(propLit.toString()));
         return obj;
     }
+
+
+    public Pred getPropLit() {
+        return propLit;
+    }
+
 
     @Override
     public String toPropString() {

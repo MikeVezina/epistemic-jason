@@ -15,7 +15,7 @@ import java.util.UUID;
  * For example, a literal 'know(know(hello))' will get unwrapped so that we have access
  * to the rootLiteral (i.e. hello) as well as the chain of embedded literals.
  */
-public abstract class EpistemicFormula {
+public abstract class EpistemicFormulaLiteral {
 
     private final Literal rootLiteral;
     private final Literal originalLiteral;
@@ -29,7 +29,7 @@ public abstract class EpistemicFormula {
      *
      * @param originalLiteral The original literal corresponding to this epistemic formula
      */
-    protected EpistemicFormula(EpistemicModality modality, Literal originalLiteral) {
+    protected EpistemicFormulaLiteral(EpistemicModality modality, Literal originalLiteral) {
         this.modality = modality;
         this.originalLiteral = new LiteralImpl(originalLiteral);
         this.rootLiteral = processRootLiteral(this.originalLiteral);
@@ -38,13 +38,13 @@ public abstract class EpistemicFormula {
         uuid = UUID.randomUUID();
     }
 
-    public static EpistemicFormula CreateFormula(EpistemicModality epistemicModality, Literal next) {
+    public static EpistemicFormulaLiteral CreateFormula(EpistemicModality epistemicModality, Literal next) {
         switch (epistemicModality) {
             case KNOW -> {
-                return new KnowEpistemicFormula(next);
+                return new KnowEpistemicFormulaLiteral(next);
             }
             /*case POSSIBLE */ default -> {
-                return new PossibleEpistemicFormula(ASSyntax.createLiteral(EpistemicModality.POSSIBLE.getFunctor(), next));
+                return new PossibleEpistemicFormulaLiteral(ASSyntax.createLiteral(EpistemicModality.POSSIBLE.getFunctor(), next));
             }
         }
     }
@@ -64,20 +64,20 @@ public abstract class EpistemicFormula {
     /**
      * Recursively parses a literal into an epistemic formula. If the literal is not
      * an epistemic literal, an EpistemicFormula object will not be created and
-     * null will be returned. Calls {@link EpistemicFormula#isEpistemicLiteral(Literal)}
+     * null will be returned. Calls {@link EpistemicFormulaLiteral#isEpistemicLiteral(Literal)}
      * to check if literal is epistemic.
      *
      * @param originalLiteral The epistemic literal to be converted into an EpistemicFormula object.
      * @return An EpistemicFormula object parsed from the literal. Null if the literal is not epistemic.
-     * @see EpistemicFormula#isEpistemicLiteral(Literal)
+     * @see EpistemicFormulaLiteral#isEpistemicLiteral(Literal)
      */
-    public static EpistemicFormula fromLiteral(Literal originalLiteral) {
+    public static EpistemicFormulaLiteral fromLiteral(Literal originalLiteral) {
         Literal copyOriginal = originalLiteral.copy();
 
         if (EpistemicModality.POSSIBLE.isFunctor(copyOriginal.getFunctor()))
-            return new PossibleEpistemicFormula(copyOriginal);
+            return new PossibleEpistemicFormulaLiteral(copyOriginal);
         else
-            return new KnowEpistemicFormula(copyOriginal);
+            return new KnowEpistemicFormulaLiteral(copyOriginal);
     }
 
     public EpistemicModality getEpistemicModality() {
@@ -112,17 +112,17 @@ public abstract class EpistemicFormula {
      * @param unifier The unifier with the corresponding variable values
      * @return A new epistemic formula object with the unified values.
      */
-    public EpistemicFormula capply(Unifier unifier) {
+    public EpistemicFormulaLiteral capply(Unifier unifier) {
         Literal applied = (Literal) getCleanedOriginal().capply(unifier);
         applied.resetHashCodeCache();
-        return EpistemicFormula.fromLiteral(applied);
+        return EpistemicFormulaLiteral.fromLiteral(applied);
     }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof EpistemicFormula)) return false;
-        EpistemicFormula that = (EpistemicFormula) o;
+        if (!(o instanceof EpistemicFormulaLiteral)) return false;
+        EpistemicFormulaLiteral that = (EpistemicFormulaLiteral) o;
         return modalityNegated == that.modalityNegated && propositionNegated == that.propositionNegated && rootLiteral.equals(that.rootLiteral) && modality == that.modality;
     }
 

@@ -2,13 +2,13 @@ package jason.asSemantics.epistemic.reasoner.formula;
 
 import jason.asSyntax.Literal;
 
-public class KnowEpistemicFormula extends EpistemicFormula {
+public class KnowEpistemicFormulaLiteral extends EpistemicFormulaLiteral {
     /**
      * Can only be constructed through the static parseLiteral method.
      *
      * @param originalLiteral The original literal corresponding to this epistemic formula
      */
-    public KnowEpistemicFormula(Literal originalLiteral) {
+    public KnowEpistemicFormulaLiteral(Literal originalLiteral) {
         super(EpistemicModality.KNOW, originalLiteral);
     }
 

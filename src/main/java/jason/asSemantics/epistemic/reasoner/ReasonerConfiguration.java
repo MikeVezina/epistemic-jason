@@ -11,6 +11,7 @@ public class ReasonerConfiguration {
     private static final String REASONER_CONFIG_JSON = "reasoner-config.json";
     private static final String DEFAULT_FULL_HOST = "http://localhost:9090";
     private static final String API_EVALUATE = "/api/evaluate";
+    private static final String API_SINGLE_EVALUATE = "/api/single-evaluate";
     private static final String APPLY_EVENT = "/api/apply-event";
     private static final String API_PROPS = "/api/props";
     private static final String API_MODEL = "/api/model";
@@ -33,6 +34,10 @@ public class ReasonerConfiguration {
 
     String getEvaluateEndpoint() {
         return fullHost + API_EVALUATE;
+    }
+
+    String getSingleEvaluateEndpoint() {
+        return fullHost + API_SINGLE_EVALUATE;
     }
 
     public static ReasonerConfiguration getInstance() {

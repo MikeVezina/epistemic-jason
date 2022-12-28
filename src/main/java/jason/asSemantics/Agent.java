@@ -1200,4 +1200,7 @@ public class Agent implements Serializable, ToDOM {
         return document;
     }
 
+    public boolean isEpistemic() {
+        return true;
+    }
 }

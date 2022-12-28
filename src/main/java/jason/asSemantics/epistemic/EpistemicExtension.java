@@ -7,6 +7,7 @@ import jason.asSemantics.epistemic.reasoner.formula.*;
 import jason.asSyntax.*;
 import jason.bb.BeliefBase;
 import jason.bb.DefaultBeliefBase;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.logging.Level;
@@ -29,7 +30,6 @@ public class EpistemicExtension implements Propositionalizer {
     }
 
 
-
     public void modelCreateSem() {
         if (modelCreated) return;
 
@@ -47,24 +47,23 @@ public class EpistemicExtension implements Propositionalizer {
          */
 
 
-
         long startTime = System.nanoTime();
         Set<Formula> constraints = getModelCreationConstraints();
         long endConstraintTime = System.nanoTime();
 
-        this.ts.getAg().getLogger().info("Constraint Consequences Time (ms): " + ((endConstraintTime - startTime)/1000000));
+        this.ts.getAg().getLogger().info("Constraint Consequences Time (ms): " + ((endConstraintTime - startTime) / 1000000));
 
 
         boolean result = reasoner.createModel(constraints);
         long endGenerationTime = System.nanoTime();
 
-        this.ts.getAg().getLogger().info("Model Generation Time (ms): " + ((endGenerationTime - endConstraintTime)/1000000));
-        this.ts.getAg().getLogger().info("Total Model Creation Time (ms): " + ((endGenerationTime - startTime)/1000000));
+        this.ts.getAg().getLogger().info("Model Generation Time (ms): " + ((endGenerationTime - endConstraintTime) / 1000000));
+        this.ts.getAg().getLogger().info("Total Model Creation Time (ms): " + ((endGenerationTime - startTime) / 1000000));
         if (!result) {
             this.ts.getAg().getLogger().info("Failed to create epistemic model from constraints");
         }
 
-        this.ts.getAg().setBB(new ChainedEpistemicBB(groundingBase, reasoner));
+        // this.ts.getAg().setBB(new ChainedEpistemicBB(groundingBase, reasoner));
 
         // Update agent to use epistemic BB
 //        if(result)
@@ -73,38 +72,48 @@ public class EpistemicExtension implements Propositionalizer {
         modelCreated = true;
     }
 
+    /**
+     * Find all constraints for model creation:
+     * - Initial beliefs
+     * - Initial Ranges
+     * - Constraint rules (from range values only)
+     *
+     * @return
+     */
     protected Set<Formula> getModelCreationConstraints() {
         Set<Formula> constraints = new HashSet<>();
 
         // Add initial beliefs to constraints
         this.ts.getAg().getBB().forEach(l -> {
-
-
             if (!l.isRule() && l.getNS() == Literal.DefaultNS) {
-                groundingBase.add(l);
-
-                // Do not include percepts in the initial model -- these are captured by event models
-                if (!l.hasSource(new Atom("percept")))
-                    constraints.add(propLit(l));
+                // Decision: should percepts be part of the initial model if they are available?
+                // Cons of having them: initial model may not be able to be cached.
+                // These are captured by event models and special event plans. We may mis-represent the event plans if we capture it here.
+                // E.g. if +x is a public announcement of x, the impact of this event will change if we include x in the initial model
+                if (!l.hasSource(new Atom("percept"))) {
+                    // groundingBase.add(l);
+                    constraints.add(l.toPropFormula());
+                }
             }
         });
 
         // Process rule semantics
-        List<Rule> allRules = new ArrayList<>(getAllRules());
+        Set<Literal> rangeValues = new HashSet<>();
 
-        // Load range rule constraints
-        constraints.addAll(getRangeConstraints(allRules));
+        // Load propositionalized range rules (and populate range values)
+        constraints.addAll(getRangeConstraints(this.ts.getAg(), rangeValues));
         int rangeCons = constraints.size();
         System.out.println("Range Constraints: " + rangeCons);
 
-        constraints.addAll(getSingleConstraints(allRules));
-        int singleConstraints = constraints.size() - rangeCons;
-        System.out.println("Single Constraints: " + singleConstraints);
+        // constraints.addAll(getSingleConstraints(allRules));
+        // int singleConstraints = constraints.size() - rangeCons;
+        // System.out.println("Single Constraints: " + singleConstraints);
 
         // Load initial beliefs and
-        constraints.addAll(getRuleConstraints(allRules));
-        int stdCons = constraints.size() - singleConstraints - rangeCons;
-        System.out.println("Standard Rule Constraints: " + stdCons);
+        constraints.addAll(getRangeConstraintRules(ts.getAg(), rangeValues));
+        int constraintRules = constraints.size() - rangeCons;
+        // int constraintTime = constraints.size() - singleConstraints - rangeCons;
+        System.out.println("Standard Rule Constraints: " + constraintRules);
 
         return constraints;
     }
@@ -116,7 +125,7 @@ public class EpistemicExtension implements Propositionalizer {
         // Map each rule to its constraint
         Set<Formula> constraints = new HashSet<>();
 
-        for(var r : singleRules)
+        for (var r : singleRules)
             constraints.addAll(interpretSingle(r));
 
         return constraints;
@@ -178,12 +187,13 @@ public class EpistemicExtension implements Propositionalizer {
     }
 
     private DELEvent mapPlanToEvent(Option option) {
-        // Erase label from plan for the sake of
-        Plan planNoLabel = ((Plan) option.getPlan().clone());
+        Plan unifPlan = option.getPlan().capply(option.getUnifier());
+
+        // Erase label from plan for the sake of event id readability
+        Plan planNoLabel = ((Plan) unifPlan.clone());
         planNoLabel.delLabel();
 
         DELEvent ev = new DELEvent(planNoLabel);
-        Plan unifPlan = option.getPlan().capply(option.getUnifier());
 
         // Only process context when non-null
         if (unifPlan.getContext() != null) {
@@ -234,9 +244,9 @@ public class EpistemicExtension implements Propositionalizer {
                     if (ts.getLogger().isLoggable(Level.FINE))
                         ts.getLogger().log(Level.FINE, "     " + opt.getPlan().getLabel() + " is applicable with unification " + opt.getUnifier());
                 } else {
-                    Iterator<Unifier> r = logicalCons(context, groundingBase, opt.getUnifier());
+                    Iterator<RewriteUnifier> r = rewriteCons(context, opt.getUnifier());
                     boolean isApplicable = false;
-                    Set<Unifier> distinctUnifs = new HashSet<>();
+                    Set<RewriteUnifier> distinctUnifs = new HashSet<>();
 
                     if (r != null) {
                         while (r.hasNext()) {
@@ -246,12 +256,16 @@ public class EpistemicExtension implements Propositionalizer {
                                 ap = new LinkedList<>();
 
                             var unif = r.next();
+                            var simplifiedUnif = new RewriteUnifier(unif.getFormula().simplify(), unif.getUnifier());
 
                             // Only add distinct unifiers
-                            if (!distinctUnifs.contains(unif))
-                                ap.add(new Option(opt.getPlan(), unif));
-
-                            distinctUnifs.add(unif);
+                            if (!distinctUnifs.contains(simplifiedUnif)) {
+                                // Clone plan and insert re-write formulas
+                                Plan cPlan = (Plan) opt.getPlan().clone();
+                                cPlan.setContext(simplifiedUnif.getFormula().simplify());
+                                ap.add(new Option(cPlan, simplifiedUnif.getUnifier()));
+                            }
+                            distinctUnifs.add(simplifiedUnif);
 
                             if (ts.getLogger().isLoggable(Level.FINE))
                                 ts.getLogger().log(Level.FINE, "     " + opt.getPlan().getLabel() + " is applicable with unification " + opt.getUnifier());
@@ -272,64 +286,119 @@ public class EpistemicExtension implements Propositionalizer {
     /**
      * Gets log cons with respect to a different set of literals
      */
-    private Iterator<Unifier> logicalCons(LogicalFormula context, BeliefBase groundingBase, Unifier unifier) {
+    private Iterator<RewriteUnifier> rewriteCons(LogicalFormula context, Unifier unifier) {
         if (context == null) return null;
 
         // Need to clone agent and set up new belief base
-        var customAg = CallbackLogicalConsequence.CreateBBLogicalConsequence(ts.getAg(), groundingBase);
-        return context.logicalConsequence(customAg, unifier);
+        // var customAg = CallbackLogicalConsequence.CreateBBLogicalConsequence(ts.getAg(), groundingBase);
+        return context.rewriteConsequences(ts.getAg(), unifier);
     }
 
-    private Set<Formula> getRuleConstraints(List<Rule> allRules) {
-        // Filter range rules
-        var standardRuleStm = allRules.stream().filter(r -> !r.getPredicateIndicator().equals(RANGE_PRED_IND)).filter(r -> !r.getPredicateIndicator().equals(SINGLE_PRED_IND)).filter(r -> r.getNS() == Literal.DefaultNS);
-
-        List<Rule> standardRulesList = standardRuleStm.collect(Collectors.toList());
-
-        // Map all rules to their ground consequences, then reduce (join) them into a single set
-        Set<Literal> allGroundRules = new HashSet<>();
-
-        for(var lit : standardRulesList)
-            allGroundRules.addAll(getGroundConsequences(lit));
+    private Set<Formula> getRangeConstraintRules(Agent ag, Set<Literal> allRange) {
+        // allRange should contain +/~ lits
+        Set<Formula> constraintRulesProps = new HashSet<>();
 
         Map<Literal, Set<LogicalFormula>> headToBodyMap = new HashMap<>();
 
-        // For all groundings, map the head literal to the set of corresponding body literals
-        for (Literal ruleLit : allGroundRules) {
-            Rule rule = (Rule) ruleLit;
+        for (Literal rangeLit : allRange) {
+            var conRulesSet = getCandidateRules(ag, ag.getBB(), rangeLit, new Unifier());
 
-            Literal head = rule.getHead();
-            LogicalFormula body = rule.getBody();
+            // For all constraint rules, we must obtain "rewrite" consequences, in order to simplify and propositionalize the rule
+            for (Rule conRule : conRulesSet) {
 
-            if (!headToBodyMap.containsKey(head)) headToBodyMap.put(head, new HashSet<>());
+                var rewriteIter = conRule.getBody().rewriteConsequences(ag, new Unifier());
 
-            // Pare body down
-            LogicalFormula paredBody = (LogicalFormula) simplify(body);
+                // How do we want to propositionalize a rule with a 'false' body?
+                // Eg loc(1) :- false. is propped as 'true or loc(1)' which is trivially true.
+                if (rewriteIter == null || !rewriteIter.hasNext())
+                    continue;
 
-            headToBodyMap.get(head).add(paredBody);
+
+                while (rewriteIter.hasNext()) {
+                    var next = rewriteIter.next();
+
+                    // Obtain unified head
+                    var headUnif = conRule.headCApply(next.getUnifier());
+                    if (!headUnif.isGround()) {
+                        System.out.println("Head unif is not ground");
+                        continue;
+                    }
+                    var set = headToBodyMap.getOrDefault(headUnif, new HashSet<>());
+                    set.add(next.getFormula());
+                    headToBodyMap.put(headUnif, set);
+                }
+
+
+                for (var entry : headToBodyMap.entrySet()) {
+                    var head = entry.getKey();
+                    var fullForm = entry.getValue();
+
+                    // Create a disjoint formula containing several ground formulas.
+                    Set<Formula> groundDisjForms = new HashSet<>();
+
+                    for (var form : fullForm)
+                        groundDisjForms.add(form.simplify().toPropFormula());
+
+                    // Not sure if this is the right approach...
+                    constraintRulesProps.add(new ImpliesFormula(new OrFormula(groundDisjForms), head.toPropFormula()));
+                }
+
+
+            }
 
         }
 
-        // Map each rule literal to its constraint
-        Set<Formula> ruleConstraints = allGroundRules.stream().map(l -> (Rule) l).map(this::interpretRuleConstraint).collect(Collectors.toSet());
+        return constraintRulesProps;
 
-
-        // We need to remove any rule bodies that are strictly true/false, since these rules do not require us to model the negation semantics
-        for (Iterator<Map.Entry<Literal, Set<LogicalFormula>>> it = headToBodyMap.entrySet().iterator(); it.hasNext(); ) {
-            Set<LogicalFormula> paredBodySet = it.next().getValue();
-
-            // Remove entries where there is:
-            // 1. a true rule body (in this case, all worlds will have the prop)
-            // 2. A false rule body (no worlds)
-            if (paredBodySet.contains(Literal.LTrue) || paredBodySet.contains(Literal.LFalse)) it.remove();
-
-        }
-
-
-        // Create sentences for equivalences
-        ruleConstraints.addAll(headToBodyMap.entrySet().stream().map(this::interpretStandardEquivalence).collect(Collectors.toSet()));
-
-        return ruleConstraints;
+        // // Filter range rules
+        // var standardRuleStm = allRules.stream().filter(r -> !r.getPredicateIndicator().equals(RANGE_PRED_IND)).filter(r -> !r.getPredicateIndicator().equals(SINGLE_PRED_IND)).filter(r -> r.getNS() == Literal.DefaultNS);
+        //
+        // List<Rule> standardRulesList = standardRuleStm.collect(Collectors.toList());
+        //
+        // // Map all rules to their ground consequences, then reduce (join) them into a single set
+        // Set<Literal> allGroundRules = new HashSet<>();
+        //
+        // for (var lit : standardRulesList)
+        //     allGroundRules.addAll(getGroundConsequences(lit));
+        //
+        // Map<Literal, Set<LogicalFormula>> headToBodyMap = new HashMap<>();
+        //
+        // // For all groundings, map the head literal to the set of corresponding body literals
+        // for (Literal ruleLit : allGroundRules) {
+        //     Rule rule = (Rule) ruleLit;
+        //
+        //     Literal head = rule.getHead();
+        //     LogicalFormula body = rule.getBody();
+        //
+        //     if (!headToBodyMap.containsKey(head)) headToBodyMap.put(head, new HashSet<>());
+        //
+        //     // Pare body down
+        //     LogicalFormula paredBody = (LogicalFormula) simplify(body);
+        //
+        //     headToBodyMap.get(head).add(paredBody);
+        //
+        // }
+        //
+        // // Map each rule literal to its constraint
+        // Set<Formula> ruleConstraints = allGroundRules.stream().map(l -> (Rule) l).map(this::interpretRuleConstraint).collect(Collectors.toSet());
+        //
+        //
+        // // We need to remove any rule bodies that are strictly true/false, since these rules do not require us to model the negation semantics
+        // for (Iterator<Map.Entry<Literal, Set<LogicalFormula>>> it = headToBodyMap.entrySet().iterator(); it.hasNext(); ) {
+        //     Set<LogicalFormula> paredBodySet = it.next().getValue();
+        //
+        //     // Remove entries where there is:
+        //     // 1. a true rule body (in this case, all worlds will have the prop)
+        //     // 2. A false rule body (no worlds)
+        //     if (paredBodySet.contains(Literal.LTrue) || paredBodySet.contains(Literal.LFalse)) it.remove();
+        //
+        // }
+        //
+        //
+        // // Create sentences for equivalences
+        // ruleConstraints.addAll(headToBodyMap.entrySet().stream().map(this::interpretStandardEquivalence).collect(Collectors.toSet()));
+        //
+        // return ruleConstraints;
     }
 
     private Formula interpretStandardEquivalence(Map.Entry<Literal, Set<LogicalFormula>> literalSetEntry) {
@@ -426,57 +495,139 @@ public class EpistemicExtension implements Propositionalizer {
 
     }
 
-    private Formula simplifyAndProp(Term unpared) {
-        return prop(simplify(unpared));
+    private Formula simplifyAndProp(LogicalFormula unpared) {
+        return unpared.simplify().toPropFormula();
+
+        // return prop(simplify(unpared));
+    }
+
+    /**
+     * Find rules with heads that unify the given literal.
+     *
+     * @param a
+     * @param beliefBase
+     * @param literal
+     * @param unif
+     * @return
+     */
+    private Set<Rule> getCandidateRules(Agent a, BeliefBase beliefBase, Literal literal, Unifier unif) {
+        Set<Rule> candidates = new HashSet<>();
+        var rangeIter = beliefBase.getCandidateBeliefs(literal, unif);
+
+        // try literal iterator
+        while (rangeIter != null && rangeIter.hasNext()) {
+            var nextBel = rangeIter.next(); // b is the relevant entry in BB
+            if (nextBel.isRule()) {
+                Rule rule = (Rule) nextBel;
+
+                // create a copy of this literal, ground it and
+                // make its vars anonymous,
+                // it is used to define what will be the unifier used
+                // inside the rule.
+                Literal cloneAnnon = (Literal) literal.capply(unif);
+                cloneAnnon.makeVarsAnnon();
+
+                Unifier ruleUn = unif.clone();
+                if (ruleUn.unifiesNoUndo(cloneAnnon, rule)) { // the rule head unifies with the literal
+                    candidates.add(new Rule(rule, ruleUn));
+
+                }
+            }
+        }
+
+        return candidates;
     }
 
 
-    private Set<Formula> getRangeConstraints(List<Rule> allRules) {
-        // Filter range rules
-        List<Rule> rangeRules = allRules.stream().filter(r -> r.getPredicateIndicator().equals(RANGE_PRED_IND)).collect(Collectors.toList());
+    private Set<Formula> getRangeConstraints(@NotNull Agent ag, Set<Literal> rangeOut) {
+        Literal rangeVar = ASSyntax.createLiteral("range", ASSyntax.createVar());
+
+        // Get all range predicates
+        var rangeIter = rangeVar.rewriteConsequences(ag, new Unifier());
 
         // Map each rule to its constraint
         Set<Formula> constraints = new HashSet<>();
 
-        for(var r : rangeRules)
-            constraints.addAll(interpretRange(r));
+        while (rangeIter != null && rangeIter.hasNext()) {
+            RewriteUnifier next = rangeIter.next();
+            Formula rangeProp = propRange(rangeVar, next.getUnifier(), rangeOut, this.ts.getAg().getBB());
 
-         return constraints;
+            if (rangeProp != null)
+                constraints.add(rangeProp);
+        }
+        return constraints;
     }
 
-    private Set<Formula> interpretRange(Rule r) {
-
+    /**
+     * Propositionalizes a single range literal. We append positive and negative ground range values (first terms) to th e rangeValOut and belBase.
+     *
+     * @param rangeLit
+     * @param u
+     * @param rangeValOut A set of range values that is appended, if not null.
+     * @param belBase     Add range values to the belief base as grounded beliefs, if not null.
+     * @return The propositional formula, given a ground literal (potentially grounded by u),
+     * or null if the literal can not be grounded, or if the first term is negated.
+     */
+    private Formula propRange(Literal rangeLit, Unifier u, Set<Literal> rangeValOut, BeliefBase belBase) {
         // 1. Find all groundings of range
-        Set<Literal> ground = getGroundConsequences(r);
+        // Set<Literal> ground = new HashSet<>();
 
-        // Isolate ground head and remove 'Range' wrapper
-        ground = ground.stream().map(l -> (Literal) l.getTerm(0)).collect(Collectors.toSet());
+        Literal groundRange = (Literal) rangeLit.capply(u);
+        Term firstTerm = groundRange.getTerm(0);
 
-        // 2. For each ground lit l:
-        //  a. convert to disjunction: l or not l
-        //  b. add {l, ~l} to grounding set
-        Set<Formula> disjunctions = new HashSet<>();
-        for (Literal l : ground) {
-            // Add literal pos and neg
-            Literal neg = ((Literal) l.clone()).setNegated(Literal.LNeg);
-            Literal pos = ((Literal) l.clone()).setNegated(Literal.LPos);
+        // If the literal is not ground, or the inner term is negated, we return
+        if (!groundRange.isGround() || (firstTerm.isLiteral() && ((Literal) firstTerm).negated()))
+            return null;
 
-            // Create disj form string, and add both forms to ground base
-            disjunctions.add(createDisjunction(Set.of(prop(pos), prop(neg))));
-            groundingBase.add(neg);
-            groundingBase.add(pos);
+        // If firstTerm is a predicate/atom/etc. (but still a 'literal'), negated returns null.
+        // So we must force full literal implementation
+        Literal fullFirst = ((Literal) firstTerm).forceFullLiteralImpl();
+
+        // Add literal pos and neg
+        Literal neg = ((Literal) fullFirst.clone()).setNegated(Literal.LNeg);
+        Literal pos = ((Literal) fullFirst.clone()).setNegated(Literal.LPos);
+
+
+        if (rangeValOut != null) {
+            rangeValOut.add(neg);
+            rangeValOut.add(pos);
         }
 
+        if (belBase != null) {
+            belBase.add(neg);
+            belBase.add(pos);
+        }
 
-        /*
-            (Range 1, Constraint 1): Get all groundings of rule
-            (Range 2): Convert groundings to disjunction
+        return createDisjunction(Set.of(pos.toPropFormula(), neg.toPropFormula()));
 
-
-
-         */
-
-        return disjunctions;
+        // Isolate ground head and remove 'Range' wrapper
+        // ground = ground.stream().map(l -> (Literal) l.getTerm(0)).collect(Collectors.toSet());
+        //
+        // // 2. For each ground lit l:
+        // //  a. convert to disjunction: l or not l
+        // //  b. add {l, ~l} to grounding set
+        // Set<Formula> disjunctions = new HashSet<>();
+        // for (Literal l : ground) {
+        //     // Add literal pos and neg
+        //     Literal neg = ((Literal) l.clone()).setNegated(Literal.LNeg);
+        //     Literal pos = ((Literal) l.clone()).setNegated(Literal.LPos);
+        //
+        //     // Create disj form string, and add both forms to ground base
+        //     disjunctions.add(createDisjunction(Set.of(prop(pos), prop(neg))));
+        //     belBase.add(neg);
+        //     belBase.add(pos);
+        // }
+        //
+        //
+        // /*
+        //     (Range 1, Constraint 1): Get all groundings of rule
+        //     (Range 2): Convert groundings to disjunction
+        //
+        //
+        //
+        //  */
+        //
+        // return disjunctions;
     }
 
     private Set<Formula> interpretSingle(Rule r) {
@@ -535,7 +686,7 @@ public class EpistemicExtension implements Propositionalizer {
         if (l.isRule()) litForCons = ((Rule) l).getBody();
 
         // Get all consequences (using grounding base)
-        var cons = logicalCons(litForCons, groundingBase, new Unifier());
+        var cons = rewriteCons(litForCons, new Unifier());
 
         // No consequences
         if (cons == null) return ground;
@@ -546,7 +697,7 @@ public class EpistemicExtension implements Propositionalizer {
         // Iterate all unifiers
         while (cons.hasNext()) {
             var next = cons.next();
-            Literal res = (Literal) l.capply(next);
+            Literal res = (Literal) l.capply(next.getUnifier());
 
             boolean isGround = res.isGround();
 
@@ -661,4 +812,21 @@ public class EpistemicExtension implements Propositionalizer {
         return allRules;
     }
 
+    public boolean evaluate(EpistemicModality modality, Formula propFormula) {
+        // Evaluate true/false without delegating to reasoner
+        if (propFormula instanceof PropFormula) {
+            if (((PropFormula) propFormula).getPropLit().equals(Literal.LTrue))
+                return true;
+            else if (((PropFormula) propFormula).getPropLit().equals(Literal.LFalse))
+                return false;
+        }
+
+        if (!modelCreated) {
+            System.out.println("WARNING: Evaluating formula while model is uninitialized. All consequences may return true.");
+            return true;
+        }
+
+        // Map modality to formulas
+        return reasoner.evaluateFormula(new ModalPropFormula(modality, propFormula));
+    }
 }

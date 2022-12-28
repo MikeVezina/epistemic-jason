@@ -2,7 +2,7 @@ package jason.asSemantics.epistemic.reasoner.formula;
 
 public enum EpistemicModality {
     KNOW("know"),
-    POSSIBLE("possible");
+    POSSIBLE("poss");
 
 
     private final String functor;

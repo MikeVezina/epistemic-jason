@@ -2,7 +2,7 @@ package jason.asSemantics.epistemic;
 
 import jason.asSemantics.Unifier;
 import jason.asSemantics.epistemic.reasoner.EpistemicReasoner;
-import jason.asSemantics.epistemic.reasoner.formula.EpistemicFormula;
+import jason.asSemantics.epistemic.reasoner.formula.EpistemicFormulaLiteral;
 import jason.asSyntax.Atom;
 import jason.asSyntax.Literal;
 import jason.asSyntax.PredicateIndicator;
@@ -66,7 +66,7 @@ public class ChainedEpistemicBB extends ChainBBAdapter {
         // Copy & Apply the unifier to the literal
         Literal unifiedLiteral = (Literal) l.capply(u);
 
-        var epistemicLiteral = EpistemicFormula.fromLiteral(unifiedLiteral);
+        var epistemicLiteral = EpistemicFormulaLiteral.fromLiteral(unifiedLiteral);
 
         // If the root literal is not ground, then obtain all possible managed unifications
         var groundFormulas = getCandidateFormulas(epistemicLiteral);
@@ -89,13 +89,13 @@ public class ChainedEpistemicBB extends ChainBBAdapter {
         return arr.iterator();
     }
 
-    protected List<EpistemicFormula> getCandidateFormulas(EpistemicFormula formula)
+    protected List<EpistemicFormulaLiteral> getCandidateFormulas(EpistemicFormulaLiteral formula)
     {
         // Strip formula of all modalities
         Literal formLit = formula.getRootLiteral();
 
         // Find all groundings using ground set and return list of results
-        List<EpistemicFormula> results = new ArrayList<>();
+        List<EpistemicFormulaLiteral> results = new ArrayList<>();
 
         var belIter = this.groundBase.getCandidateBeliefs(formLit, new Unifier());
 
@@ -103,7 +103,7 @@ public class ChainedEpistemicBB extends ChainBBAdapter {
         {
             Literal next = belIter.next().copy();
             next.clearAnnots();
-            results.add(EpistemicFormula.CreateFormula(formula.getEpistemicModality(), next));
+            results.add(EpistemicFormulaLiteral.CreateFormula(formula.getEpistemicModality(), next));
         }
 
         return results;

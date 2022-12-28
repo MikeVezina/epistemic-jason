@@ -3,11 +3,11 @@ package jason.asSemantics.epistemic.reasoner.formula;
 import jason.asSyntax.ASSyntax;
 import jason.asSyntax.Literal;
 
-public class PossibleEpistemicFormula extends EpistemicFormula {
+public class PossibleEpistemicFormulaLiteral extends EpistemicFormulaLiteral {
     /**
      * @param originalLiteral The original literal corresponding to this epistemic formula
      */
-    public PossibleEpistemicFormula(Literal originalLiteral) {
+    public PossibleEpistemicFormulaLiteral(Literal originalLiteral) {
         super(EpistemicModality.POSSIBLE, originalLiteral);
 
         // Assert arity == 1 and that nested term is literal.
@@ -16,8 +16,8 @@ public class PossibleEpistemicFormula extends EpistemicFormula {
 
     }
 
-    public EpistemicFormula deriveNewPossibleFormula(boolean modalNegated, boolean propNegated) {
-        return EpistemicFormula.fromLiteral(
+    public EpistemicFormulaLiteral deriveNewPossibleFormula(boolean modalNegated, boolean propNegated) {
+        return EpistemicFormulaLiteral.fromLiteral(
                 ASSyntax.createLiteral(
                         EpistemicModality.POSSIBLE.getFunctor(),
                         getRootLiteral().setNegated(propNegated ? Literal.LNeg : Literal.LPos))

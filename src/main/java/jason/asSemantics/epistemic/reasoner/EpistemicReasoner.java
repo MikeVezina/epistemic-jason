@@ -3,7 +3,7 @@ package jason.asSemantics.epistemic.reasoner;
 import com.google.gson.*;
 import jason.asSemantics.epistemic.DELEventModel;
 import jason.asSemantics.epistemic.Propositionalizer;
-import jason.asSemantics.epistemic.reasoner.formula.EpistemicFormula;
+import jason.asSemantics.epistemic.reasoner.formula.EpistemicFormulaLiteral;
 import jason.asSemantics.epistemic.reasoner.formula.Formula;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpUriRequest;
@@ -15,7 +15,6 @@ import org.apache.http.impl.client.HttpClients;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.BufferedInputStream;
-import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.*;
@@ -49,7 +48,7 @@ public class EpistemicReasoner {
 
         dumpConstraints(constraints);
 
-        if(!constraints.isEmpty())
+        if (!constraints.isEmpty())
             return true;
 
         // Maybe have the managed worlds object be event-driven for information updates.
@@ -85,7 +84,7 @@ public class EpistemicReasoner {
     }
 
     private void dumpConstraints(Set<Formula> constraints) {
-        String fileName = "constraints_" + constraints.size() + ".json";
+        String fileName = "new_constraints_" + constraints.size() + ".json";
         System.out.println("Failed to create model (too many constraints). Dumping to file: " + fileName);
         try (FileWriter fw = new FileWriter(fileName, false)) {
 //                fw.write("[");
@@ -145,9 +144,9 @@ public class EpistemicReasoner {
         return resultJson.get(UPDATE_PROPS_SUCCESS_KEY).getAsBoolean();
     }
 
-    public Map<EpistemicFormula, Boolean> evaluateFormulas(Collection<EpistemicFormula> formulas) {
-        Map<String, EpistemicFormula> formulaHashLookup = new HashMap<>();
-        Map<EpistemicFormula, Boolean> formulaResults = new HashMap<>();
+    public Map<EpistemicFormulaLiteral, Boolean> evaluateFormulas(Collection<EpistemicFormulaLiteral> formulas) {
+        Map<String, EpistemicFormulaLiteral> formulaHashLookup = new HashMap<>();
+        Map<EpistemicFormulaLiteral, Boolean> formulaResults = new HashMap<>();
 
         if (formulas == null || formulas.isEmpty())
             return formulaResults;
@@ -158,7 +157,7 @@ public class EpistemicReasoner {
         JsonObject formulaRoot = new JsonObject();
         JsonArray formulaArray = new JsonArray();
 
-        for (EpistemicFormula formula : formulas) {
+        for (EpistemicFormulaLiteral formula : formulas) {
             formulaArray.add(toFormulaJSON(formula));
             formulaHashLookup.put(formula.getUniqueId(), formula);
         }
@@ -199,6 +198,37 @@ public class EpistemicReasoner {
 
         return formulaResults;
     }
+
+    public Boolean evaluateFormula(Formula formula) {
+        long initialTime = System.nanoTime();
+        metricsLogger.info("Evaluating formula: " + formula.toString());
+
+        long jsonStringTime = System.nanoTime() - initialTime;
+        metricsLogger.info("Formula JSON build time (ms): " + (jsonStringTime / NS_PER_MS));
+
+
+        var jsonBody = new JsonObject();
+        jsonBody.add("formula", formula.toJson());
+
+        var req = RequestBuilder
+                .post(reasonerConfiguration.getSingleEvaluateEndpoint())
+                .setEntity(new StringEntity(jsonBody.toString(), ContentType.APPLICATION_JSON))
+                .build();
+
+        var resultJson = sendRequest(req, EpistemicReasoner::jsonTransform).getAsJsonObject();
+
+        long sendTime = System.nanoTime() - initialTime;
+        metricsLogger.info("Reasoner single formula evaluation time (ms): " + ((sendTime - jsonStringTime) / NS_PER_MS));
+
+        // If the result is null, success == false, or there is no result entry, then return an empty set.
+        if (resultJson == null || !resultJson.has(EVALUATION_FORMULA_RESULTS_KEY)) {
+            System.out.println("Could not read single formula evaluation response");
+            return false;
+        }
+
+        return resultJson.getAsJsonPrimitive(EVALUATION_FORMULA_RESULTS_KEY).getAsBoolean();
+    }
+
 
     /**
      * Updates the currently believed propositions
@@ -376,7 +406,7 @@ public class EpistemicReasoner {
      * @param formula
      * @return
      */
-    JsonElement toFormulaJSON(EpistemicFormula formula) {
+    JsonElement toFormulaJSON(EpistemicFormulaLiteral formula) {
         var jsonElement = new JsonObject();
         jsonElement.addProperty("id", formula.getUniqueId());
 

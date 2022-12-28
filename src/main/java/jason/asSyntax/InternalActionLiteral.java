@@ -105,7 +105,7 @@ public class InternalActionLiteral extends Structure implements LogicalFormula {
 
     @Override
     public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
-        var iter = logicalConsequence(ag, un);
+        var iter = executeCons(ag, un);
         if (iter == null)
             return EMPTY_REWRITE_UNIF_LIST.iterator();
 
@@ -127,8 +127,7 @@ public class InternalActionLiteral extends Structure implements LogicalFormula {
 
     }
 
-    @SuppressWarnings("unchecked")
-    public Iterator<Unifier> logicalConsequence(Agent ag, Unifier un) {
+    protected Iterator<Unifier> executeCons(Agent ag, Unifier un) {
         if (ag == null || ag.getTS().getAgArch().isRunning()) {
             try {
                 InternalAction ia = getIA(ag);
@@ -175,12 +174,17 @@ public class InternalActionLiteral extends Structure implements LogicalFormula {
                     Thread.sleep(200);
                 } catch (InterruptedException e1) {
                 }
-                return logicalConsequence(ag, un);
+                return executeCons(ag, un);
             } catch (Exception e) {
                 logger.log(Level.SEVERE, getErrorMsg() + ": " + e.getMessage(), e);
             }
         }
         return LogExpr.EMPTY_UNIF_LIST.iterator();  // empty iterator for unifier
+    }
+
+    @SuppressWarnings("unchecked")
+    public Iterator<Unifier> logicalConsequence(Agent ag, Unifier un) {
+        return executeCons(ag, un);
     }
 
     public void setIA(InternalAction ia) {

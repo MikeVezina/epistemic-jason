@@ -2,6 +2,7 @@ package jason.asSyntax;
 
 import java.io.StringReader;
 import java.util.*;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -14,10 +15,9 @@ import jason.architecture.AgArch;
 import jason.asSemantics.Agent;
 import jason.asSemantics.RewriteUnifier;
 import jason.asSemantics.Unifier;
-import jason.asSemantics.epistemic.reasoner.formula.Formula;
-import jason.asSemantics.epistemic.reasoner.formula.NotFormula;
-import jason.asSemantics.epistemic.reasoner.formula.PropFormula;
+import jason.asSemantics.epistemic.reasoner.formula.*;
 import jason.asSyntax.parser.as2j;
+import jason.util.Pair;
 
 /**
  * This class represents an abstract literal (an Atom, Structure, Predicate, etc), it is mainly
@@ -454,6 +454,11 @@ public abstract class Literal extends DefaultTerm implements LogicalFormula {
 
     @Override
     public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
+        // Rewrite consequences where we use all rules
+        return this.rewriteConsequences(ag, un, (u) -> true);
+    }
+
+    public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un, Function<Literal, Boolean> shouldUseRule) {
         final boolean isInDebug = ag.getLogger().isLoggable(Level.FINE);
 
         final Iterator<Literal> il = ag.getBB().getCandidateBeliefs(this, un);
@@ -531,7 +536,8 @@ public abstract class Literal extends DefaultTerm implements LogicalFormula {
                             RewriteUnifier unC = new RewriteUnifier(ruleUn.getFormula(), un.clone());
                             if (unC.getUnifier().unifiesNoUndo(Literal.this, rhead)) {
                                 // Set current rule body formula iterator as cur iterator
-                                current = unC;
+                                if (shouldUseRule == null || shouldUseRule.apply(rhead))
+                                    current = unC;
                                 if (isInDebug)
                                     ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", rule " + rhead + " is an option -- " + unC);
                                 return;
@@ -627,161 +633,232 @@ public abstract class Literal extends DefaultTerm implements LogicalFormula {
      * Returns an iterator for all unifiers that are logCons.
      */
     public Iterator<Unifier> logicalConsequence(final Agent ag, final Unifier un) {
-
         final boolean isInDebug = ag.getLogger().isLoggable(Level.FINE);
+        final boolean isEpistemic = ag.isEpistemic();
 
-        final Iterator<Literal> il = ag.getBB().getCandidateBeliefs(this, un);
-        if (il == null) { // no relevant bels
+        if (isEpistemic)
+            System.out.println("Epistemic logical consequences called");
+
+        Pair<EpistemicModality, Literal> parsedForm = parseEpistemicLiteral(this);
+
+        // Hold rewrite consequences for literal
+        // Pass logical consequences to root literal (e.g., poss(X) should pass it to X)
+        Iterator<RewriteUnifier> il = parsedForm.getSecond().rewriteConsequences(ag, un);
+
+        if (il == null) { // no relevant consequences
             if (isInDebug) ag.getLogger().log(Level.FINE, "     | no candidate belief for " + this + " with " + un);
             return LogExpr.EMPTY_UNIF_LIST.iterator();
         }
 
-        final AgArch arch = (ag != null && ag.getTS() != null ? ag.getTS().getAgArch() : null);
-        final int nbAnnots = (hasAnnot() && getAnnots().getTail() == null ? getAnnots().size() : 0); // if annots contains a tail (as in p[A|R]), do not backtrack on annots
 
         return new Iterator<Unifier>() {
-            Unifier current = null;
-            Iterator<Unifier> ruleIt = null; // current rule solutions iterator
-            Literal cloneAnnon = null; // a copy of the literal with makeVarsAnnon
-            Rule rule; // current rule
-            boolean needsUpdate = true;
 
-            Iterator<List<Term>> annotsOptions = null;
-            Literal belInBB = null;
+            RewriteUnifier current = null;
 
             public boolean hasNext() {
-                if (needsUpdate)
+                if (current == null)
                     get();
                 return current != null;
             }
 
             public Unifier next() {
-                if (needsUpdate)
-                    get();
-                if (current != null)
-                    needsUpdate = true;
-                return current;
+                if (current != null) {
+                    Unifier c = current.getUnifier();
+                    current = null;
+                    return c;
+                }
+
+                return null;
             }
 
             private void get() {
-                needsUpdate = false;
                 current = null;
 
-                beginloop:
-                while (current == null) { // usually quits by returns when a solutino is found (I use this loop to avoid a bit recursion and stack overflow)
+                if (!il.hasNext())
+                    return;
 
-                    if (arch != null && !arch.isRunning()) return;
+                // Find next valid formula
+                while (il.hasNext()) {
+                    RewriteUnifier checkUnif = il.next();
 
-                    // try annots iterator
-                    if (annotsOptions != null) {
-                        while (annotsOptions.hasNext()) {
-                            Literal belToTry = belInBB.copy().setAnnots(null).addAnnots(annotsOptions.next());
-                            Unifier u = un.clone();
-                            if (u.unifiesNoUndo(Literal.this, belToTry)) {
-                                current = u;
-                                if (isInDebug)
-                                    ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", belief annotation " + belToTry + " is an option -- " + u);
-                                return;
-                            } else {
-                                if (isInDebug)
-                                    ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", belief annotation " + belToTry + " is NOT an option -- " + u);
-                            }
-                        }
-                        annotsOptions = null;
+                    // Model-check current formula. Return first available formula
+                    if (ag.getTS().getEpistemic().evaluate(parsedForm.getFirst(), checkUnif.getFormula().simplify().toPropFormula())) {
+                        current = checkUnif;
+                        return;
                     }
-
-                    // try rule iterator
-                    if (ruleIt != null) {
-                        while (ruleIt.hasNext()) {
-                            // unifies the rule head with the result of rule evaluation
-                            Unifier ruleUn = ruleIt.next(); // evaluation result
-                            //Literal rhead  = rule.headClone();
-                            //rhead = (Literal)rhead.capply(ruleUn);
-                            Literal rhead = rule.headCApply(ruleUn);
-                            useDerefVars(rhead, ruleUn); // replace vars by the bottom in the var clusters (e.g. X=_2; Y=_2, a(X,Y) ===> A(_2,_2))
-                            rhead.makeVarsAnnon(); // to remove vars in head with original names
-
-                            Unifier unC = un.clone();
-                            if (unC.unifiesNoUndo(Literal.this, rhead)) {
-                                current = unC;
-                                if (isInDebug)
-                                    ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", rule " + rhead + " is an option -- " + unC);
-                                return;
-                            } else {
-                                if (isInDebug)
-                                    ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", rule " + rhead + " is NOT an option -- " + unC);
-                            }
-                        }
-                        //if (isInDebug) ag.getLogger().log(Level.FINE, "     | rule "+rule+" has NO more options for "+ Literal.this);
-                        ruleIt = null;
-                    }
-
-                    // try literal iterator
-                    while (il.hasNext()) {
-                        belInBB = il.next(); // b is the relevant entry in BB
-                        if (belInBB.isRule()) {
-                            rule = (Rule) belInBB;
-
-                            // create a copy of this literal, ground it and
-                            // make its vars anonymous,
-                            // it is used to define what will be the unifier used
-                            // inside the rule.
-                            if (cloneAnnon == null) {
-                                cloneAnnon = (Literal) Literal.this.capply(un);
-                                cloneAnnon.makeVarsAnnon();
-                            }
-                            Unifier ruleUn = new Unifier();
-                            if (ruleUn.unifiesNoUndo(cloneAnnon, rule)) { // the rule head unifies with the literal
-                                if (isInDebug)
-                                    ag.getLogger().log(Level.FINE, "     | for " + cloneAnnon + ", rule " + rule + " is an option -- " + ruleUn);
-
-                                ruleIt = rule.getBody().logicalConsequence(ag, ruleUn);
-                                //get(); // just to avoid a bit of recursion, I am using goto
-                                continue beginloop;
-                                //if (current != null) // if it get a value
-                                //    return;
-                            } else {
-                                if (isInDebug)
-                                    ag.getLogger().log(Level.FINE, "     | for " + cloneAnnon + ", rule " + rule + " is an NOT option -- " + ruleUn);
-                            }
-                        } else { // not rule
-                            if (nbAnnots > 0) { // try annots backtracking
-                                if (belInBB.hasAnnot()) {
-                                    int nbAnnotsB = belInBB.getAnnots().size();
-                                    if (nbAnnotsB >= nbAnnots) {
-                                        annotsOptions = belInBB.getAnnots().subSets(nbAnnots);
-                                        continue beginloop;
-                                        //get();
-                                        //if (current != null) // if it get a value
-                                        //    return;
-                                    }
-                                }
-                            } else { // it is an ordinary query on a belief
-                                Unifier u = un.clone();
-                                if (u.unifiesNoUndo(Literal.this, belInBB)) {
-                                    if (isInDebug)
-                                        ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", belief " + belInBB + " is an option -- " + u);
-                                    current = u;
-                                    return;
-                                } else {
-                                    //if (isInDebug) ag.getLogger().log(Level.FINE, "     | belief "+belInBB+" is NOT an option for "+ Literal.this+ " -- "+u);
-                                }
-                            }
-                        }
-                    }
-                    if (isInDebug) ag.getLogger().log(Level.FINE, "     | NO more options for " + Literal.this);
-                    break; // do not repeat! the loop is used by 'continue' only
-                } // while
+                }
             }
 
 
             public void remove() {
             }
         };
+
+
+        // final AgArch arch = (ag != null && ag.getTS() != null ? ag.getTS().getAgArch() : null);
+        // final int nbAnnots = (hasAnnot() && getAnnots().getTail() == null ? getAnnots().size() : 0); // if annots contains a tail (as in p[A|R]), do not backtrack on annots
+        //
+        // return new Iterator<Unifier>() {
+        //     Unifier current = null;
+        //     Iterator<Unifier> ruleIt = null; // current rule solutions iterator
+        //     Literal cloneAnnon = null; // a copy of the literal with makeVarsAnnon
+        //     Rule rule; // current rule
+        //     boolean needsUpdate = true;
+        //
+        //     Iterator<List<Term>> annotsOptions = null;
+        //     Literal belInBB = null;
+        //
+        //     public boolean hasNext() {
+        //         if (needsUpdate)
+        //             get();
+        //         return current != null;
+        //     }
+        //
+        //     public Unifier next() {
+        //         if (needsUpdate)
+        //             get();
+        //         if (current != null)
+        //             needsUpdate = true;
+        //         return current;
+        //     }
+        //
+        //     private void get() {
+        //         needsUpdate = false;
+        //         current = null;
+        //
+        //         beginloop:
+        //         while (current == null) { // usually quits by returns when a solutino is found (I use this loop to avoid a bit recursion and stack overflow)
+        //
+        //             if (arch != null && !arch.isRunning()) return;
+        //
+        //             // try annots iterator
+        //             if (annotsOptions != null) {
+        //                 while (annotsOptions.hasNext()) {
+        //                     Literal belToTry = belInBB.copy().setAnnots(null).addAnnots(annotsOptions.next());
+        //                     Unifier u = un.clone();
+        //                     if (u.unifiesNoUndo(Literal.this, belToTry)) {
+        //                         current = u;
+        //                         if (isInDebug)
+        //                             ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", belief annotation " + belToTry + " is an option -- " + u);
+        //                         return;
+        //                     } else {
+        //                         if (isInDebug)
+        //                             ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", belief annotation " + belToTry + " is NOT an option -- " + u);
+        //                     }
+        //                 }
+        //                 annotsOptions = null;
+        //             }
+        //
+        //             // try rule iterator
+        //             if (ruleIt != null) {
+        //                 while (ruleIt.hasNext()) {
+        //                     // unifies the rule head with the result of rule evaluation
+        //                     Unifier ruleUn = ruleIt.next(); // evaluation result
+        //                     //Literal rhead  = rule.headClone();
+        //                     //rhead = (Literal)rhead.capply(ruleUn);
+        //                     Literal rhead = rule.headCApply(ruleUn);
+        //                     useDerefVars(rhead, ruleUn); // replace vars by the bottom in the var clusters (e.g. X=_2; Y=_2, a(X,Y) ===> A(_2,_2))
+        //                     rhead.makeVarsAnnon(); // to remove vars in head with original names
+        //
+        //                     Unifier unC = un.clone();
+        //                     if (unC.unifiesNoUndo(Literal.this, rhead)) {
+        //                         current = unC;
+        //                         if (isInDebug)
+        //                             ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", rule " + rhead + " is an option -- " + unC);
+        //                         return;
+        //                     } else {
+        //                         if (isInDebug)
+        //                             ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", rule " + rhead + " is NOT an option -- " + unC);
+        //                     }
+        //                 }
+        //                 //if (isInDebug) ag.getLogger().log(Level.FINE, "     | rule "+rule+" has NO more options for "+ Literal.this);
+        //                 ruleIt = null;
+        //             }
+        //
+        //             // try literal iterator
+        //             while (il.hasNext()) {
+        //                 belInBB = il.next(); // b is the relevant entry in BB
+        //                 if (belInBB.isRule()) {
+        //                     rule = (Rule) belInBB;
+        //
+        //                     // create a copy of this literal, ground it and
+        //                     // make its vars anonymous,
+        //                     // it is used to define what will be the unifier used
+        //                     // inside the rule.
+        //                     if (cloneAnnon == null) {
+        //                         cloneAnnon = (Literal) Literal.this.capply(un);
+        //                         cloneAnnon.makeVarsAnnon();
+        //                     }
+        //                     Unifier ruleUn = new Unifier();
+        //                     if (ruleUn.unifiesNoUndo(cloneAnnon, rule)) { // the rule head unifies with the literal
+        //                         if (isInDebug)
+        //                             ag.getLogger().log(Level.FINE, "     | for " + cloneAnnon + ", rule " + rule + " is an option -- " + ruleUn);
+        //
+        //                         ruleIt = rule.getBody().logicalConsequence(ag, ruleUn);
+        //                         //get(); // just to avoid a bit of recursion, I am using goto
+        //                         continue beginloop;
+        //                         //if (current != null) // if it get a value
+        //                         //    return;
+        //                     } else {
+        //                         if (isInDebug)
+        //                             ag.getLogger().log(Level.FINE, "     | for " + cloneAnnon + ", rule " + rule + " is an NOT option -- " + ruleUn);
+        //                     }
+        //                 } else { // not rule
+        //                     if (nbAnnots > 0) { // try annots backtracking
+        //                         if (belInBB.hasAnnot()) {
+        //                             int nbAnnotsB = belInBB.getAnnots().size();
+        //                             if (nbAnnotsB >= nbAnnots) {
+        //                                 annotsOptions = belInBB.getAnnots().subSets(nbAnnots);
+        //                                 continue beginloop;
+        //                                 //get();
+        //                                 //if (current != null) // if it get a value
+        //                                 //    return;
+        //                             }
+        //                         }
+        //                     } else { // it is an ordinary query on a belief
+        //                         Unifier u = un.clone();
+        //                         if (u.unifiesNoUndo(Literal.this, belInBB)) {
+        //                             if (isInDebug)
+        //                                 ag.getLogger().log(Level.FINE, "     | for " + Literal.this + ", belief " + belInBB + " is an option -- " + u);
+        //                             current = u;
+        //                             return;
+        //                         } else {
+        //                             //if (isInDebug) ag.getLogger().log(Level.FINE, "     | belief "+belInBB+" is NOT an option for "+ Literal.this+ " -- "+u);
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //             if (isInDebug) ag.getLogger().log(Level.FINE, "     | NO more options for " + Literal.this);
+        //             break; // do not repeat! the loop is used by 'continue' only
+        //         } // while
+        //     }
+        //
+        //
+        //     public void remove() {
+        //     }
+        // };
+    }
+
+    private Pair<EpistemicModality, Literal> parseEpistemicLiteral(Literal literal) {
+        EpistemicModality modality = EpistemicModality.KNOW;
+        Literal consequenceLit = literal;
+
+        if(EpistemicModality.POSSIBLE.isFunctor(literal.getFunctor())) {
+            if (literal.getArity() != 1)
+            {
+                logger.warning("Invalid arity of poss formula: " + literal);
+                throw new RuntimeException("Invalid arity of poss formula: " + literal);
+            }
+
+            modality = EpistemicModality.POSSIBLE;
+            consequenceLit = (Literal) literal.getTerm(0);
+        }
+
+        return new Pair<>(modality, consequenceLit);
     }
 
 
-    private void useDerefVars(Term p, Unifier un) {
+    public void useDerefVars(Term p, Unifier un) {
         if (p instanceof Literal) {
             Literal l = (Literal) p;
             for (int i = 0; i < l.getArity(); i++) {

@@ -91,7 +91,7 @@ public class RelExpr extends BinaryStructure implements LogicalFormula {
 
     @Override
     public Iterator<RewriteUnifier> rewriteConsequences(Agent ag, Unifier un) {
-        var iter = logicalConsequence(ag, un);
+        var iter = evalConsequence(ag, un);
 
         if (iter == null || !iter.hasNext())
             return EMPTY_REWRITE_UNIF_LIST.iterator();
@@ -133,7 +133,12 @@ public class RelExpr extends BinaryStructure implements LogicalFormula {
         return LTrue;
     }
 
-    public Iterator<Unifier> logicalConsequence(final Agent ag, Unifier un) {
+    @Override
+    public Iterator<Unifier> logicalConsequence(Agent ag, Unifier un) {
+        return evalConsequence(ag, un);
+    }
+
+    public Iterator<Unifier> evalConsequence(final Agent ag, Unifier un) {
         Term xp = getTerm(0).capply(un);
         Term yp = getTerm(1).capply(un);
 
