@@ -5,6 +5,7 @@ import jason.asSemantics.epistemic.DELEventModel;
 import jason.asSemantics.epistemic.Propositionalizer;
 import jason.asSemantics.epistemic.reasoner.formula.EpistemicFormulaLiteral;
 import jason.asSemantics.epistemic.reasoner.formula.Formula;
+import jason.asSemantics.epistemic.reasoner.formula.ImpliesFormula;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.methods.RequestBuilder;
@@ -43,7 +44,7 @@ public class EpistemicReasoner {
     }
 
 
-    public boolean createModel(Set<Formula> constraints) {
+    public boolean createModel(Collection<Formula> constraints) {
         metricsLogger.info("Creating model with " + constraints.size() + " constraints");
 
         dumpConstraints(constraints);
@@ -83,13 +84,20 @@ public class EpistemicReasoner {
         return true;
     }
 
-    private void dumpConstraints(Set<Formula> constraints) {
-        String fileName = "new_constraints_" + constraints.size() + ".json";
+    private void dumpConstraints(Collection<Formula> constraints) {
+        String fileName = "newer_constraints_" + constraints.size() + ".json";
         System.out.println("Failed to create model (too many constraints). Dumping to file: " + fileName);
         try (FileWriter fw = new FileWriter(fileName, false)) {
 //                fw.write("[");
             int conSize = constraints.size();
             for (var c : constraints) {
+                // // Get around stack overflow for JSON toString
+                // if(c.getDepth() > 2000)
+                // {
+                //     System.out.println("(large constraint) Prop String for constraint:");
+                //     System.out.println(c.toPropString());
+                //     continue;
+                // }
                 fw.write(c.toJson().toString());
 //                    if(conSize > 1)
 //                        fw.write(",");
@@ -103,7 +111,7 @@ public class EpistemicReasoner {
 
     }
 
-    private static JsonArray StringListToJsonArray(Set<Formula> constraints) {
+    private static JsonArray StringListToJsonArray(Collection<Formula> constraints) {
         JsonArray res = new JsonArray();
         constraints.forEach(c -> res.add(c.toJson()));
         return res;

@@ -36,6 +36,11 @@ public class NotFormula extends Formula {
     }
 
     @Override
+    protected int calcDepth() {
+        return 1 + innerForm.getDepth();
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;

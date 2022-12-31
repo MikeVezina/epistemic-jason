@@ -3,7 +3,6 @@ package jason.asSemantics.epistemic.reasoner.formula;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
-import jason.asSyntax.Pred;
 
 import java.util.Objects;
 
@@ -58,5 +57,10 @@ public class ModalPropFormula extends Formula {
         return "(" + modality.getFunctor() +
                 " " + inner.toString() +
                 ')';
+    }
+
+    @Override
+    protected int calcDepth() {
+        return 1 + inner.getDepth();
     }
 }

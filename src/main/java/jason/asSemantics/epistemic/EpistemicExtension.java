@@ -48,7 +48,8 @@ public class EpistemicExtension implements Propositionalizer {
 
 
         long startTime = System.nanoTime();
-        Set<Formula> constraints = getModelCreationConstraints();
+        List<Formula> constraints = getModelCreationConstraints();
+        // Set<Formula> uniqConstraints = new HashSet<>(constraints);
         long endConstraintTime = System.nanoTime();
 
         this.ts.getAg().getLogger().info("Constraint Consequences Time (ms): " + ((endConstraintTime - startTime) / 1000000));
@@ -80,8 +81,8 @@ public class EpistemicExtension implements Propositionalizer {
      *
      * @return
      */
-    protected Set<Formula> getModelCreationConstraints() {
-        Set<Formula> constraints = new HashSet<>();
+    protected List<Formula> getModelCreationConstraints() {
+        List<Formula> constraints = new ArrayList<>();
 
         // Add initial beliefs to constraints
         this.ts.getAg().getBB().forEach(l -> {
@@ -97,8 +98,10 @@ public class EpistemicExtension implements Propositionalizer {
             }
         });
 
+        System.out.println("Propositionalized beliefs");
+
         // Process rule semantics
-        Set<Literal> rangeValues = new HashSet<>();
+        List<Literal> rangeValues = new ArrayList<>();
 
         // Load propositionalized range rules (and populate range values)
         constraints.addAll(getRangeConstraints(this.ts.getAg(), rangeValues));
@@ -294,17 +297,26 @@ public class EpistemicExtension implements Propositionalizer {
         return context.rewriteConsequences(ts.getAg(), unifier);
     }
 
-    private Set<Formula> getRangeConstraintRules(Agent ag, Set<Literal> allRange) {
+    private List<Formula> getRangeConstraintRules(Agent ag, List<Literal> allRange) {
         // allRange should contain +/~ lits
-        Set<Formula> constraintRulesProps = new HashSet<>();
+        List<Formula> constraintRulesProps = new ArrayList<>();
 
-        Map<Literal, Set<LogicalFormula>> headToBodyMap = new HashMap<>();
+        Map<Literal, Collection<LogicalFormula>> headToBodyMap = new HashMap<>();
 
+        System.out.println("Processing constraints for " + allRange.size() + " range literals");
+        int cur = 0;
+        int conRuleCount = 0;
         for (Literal rangeLit : allRange) {
+            cur++;
+
             var conRulesSet = getCandidateRules(ag, ag.getBB(), rangeLit, new Unifier());
+
+            if(conRulesSet.size() > 100 || (allRange.size() > 500 && cur % 100 == 0))
+                System.out.println(cur + "/" + allRange.size() + " -- processed " + conRuleCount + " constraint rules");
 
             // For all constraint rules, we must obtain "rewrite" consequences, in order to simplify and propositionalize the rule
             for (Rule conRule : conRulesSet) {
+                conRuleCount++;
 
                 var rewriteIter = conRule.getBody().rewriteConsequences(ag, new Unifier());
 
@@ -323,29 +335,25 @@ public class EpistemicExtension implements Propositionalizer {
                         System.out.println("Head unif is not ground");
                         continue;
                     }
-                    var set = headToBodyMap.getOrDefault(headUnif, new HashSet<>());
+                    var set = headToBodyMap.getOrDefault(headUnif, new ArrayList<>());
                     set.add(next.getFormula());
                     headToBodyMap.put(headUnif, set);
                 }
-
-
-                for (var entry : headToBodyMap.entrySet()) {
-                    var head = entry.getKey();
-                    var fullForm = entry.getValue();
-
-                    // Create a disjoint formula containing several ground formulas.
-                    Set<Formula> groundDisjForms = new HashSet<>();
-
-                    for (var form : fullForm)
-                        groundDisjForms.add(form.simplify().toPropFormula());
-
-                    // Not sure if this is the right approach...
-                    constraintRulesProps.add(new ImpliesFormula(new OrFormula(groundDisjForms), head.toPropFormula()));
-                }
-
-
             }
+        }
 
+        for (var entry : headToBodyMap.entrySet()) {
+            var head = entry.getKey();
+            var fullForm = entry.getValue();
+
+            // Create a disjoint formula containing several ground formulas.
+            List<Formula> groundDisjForms = new ArrayList<>();
+
+            for (var form : fullForm)
+                groundDisjForms.add(form.simplify().toPropFormula());
+
+            // Not sure if this is the right approach...
+            constraintRulesProps.add(new ImpliesFormula(new OrFormula(groundDisjForms), head.toPropFormula()));
         }
 
         return constraintRulesProps;
@@ -510,8 +518,8 @@ public class EpistemicExtension implements Propositionalizer {
      * @param unif
      * @return
      */
-    private Set<Rule> getCandidateRules(Agent a, BeliefBase beliefBase, Literal literal, Unifier unif) {
-        Set<Rule> candidates = new HashSet<>();
+    private Collection<Rule> getCandidateRules(Agent a, BeliefBase beliefBase, Literal literal, Unifier unif) {
+        List<Rule> candidates = new ArrayList<>();
         var rangeIter = beliefBase.getCandidateBeliefs(literal, unif);
 
         // try literal iterator
@@ -539,14 +547,14 @@ public class EpistemicExtension implements Propositionalizer {
     }
 
 
-    private Set<Formula> getRangeConstraints(@NotNull Agent ag, Set<Literal> rangeOut) {
+    private Collection<Formula> getRangeConstraints(@NotNull Agent ag, List<Literal> rangeOut) {
         Literal rangeVar = ASSyntax.createLiteral("range", ASSyntax.createVar());
 
         // Get all range predicates
         var rangeIter = rangeVar.rewriteConsequences(ag, new Unifier());
 
         // Map each rule to its constraint
-        Set<Formula> constraints = new HashSet<>();
+        List<Formula> constraints = new ArrayList<>();
 
         while (rangeIter != null && rangeIter.hasNext()) {
             RewriteUnifier next = rangeIter.next();
@@ -568,7 +576,7 @@ public class EpistemicExtension implements Propositionalizer {
      * @return The propositional formula, given a ground literal (potentially grounded by u),
      * or null if the literal can not be grounded, or if the first term is negated.
      */
-    private Formula propRange(Literal rangeLit, Unifier u, Set<Literal> rangeValOut, BeliefBase belBase) {
+    private Formula propRange(Literal rangeLit, Unifier u, List<Literal> rangeValOut, BeliefBase belBase) {
         // 1. Find all groundings of range
         // Set<Literal> ground = new HashSet<>();
 
@@ -630,7 +638,7 @@ public class EpistemicExtension implements Propositionalizer {
         // return disjunctions;
     }
 
-    private Set<Formula> interpretSingle(Rule r) {
+    private Collection<Formula> interpretSingle(Rule r) {
 
         // single(X) => single(X = {a, b, c})
         // Add a, b, c to grounding set

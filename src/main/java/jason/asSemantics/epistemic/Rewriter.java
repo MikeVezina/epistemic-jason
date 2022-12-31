@@ -176,7 +176,7 @@ public class Rewriter {
 
             defaultBeliefBase.add(ASSyntax.createRule(createLiteral("range", ASSyntax.createLiteral("none")), LTrue));
 
-            int locs = 5;
+            int locs = 100;
             for (int x = 0; x < locs; x++) {
                 for (int y = 0; y < locs; y++) {
                     if ((x * y) % 500 == 0)
@@ -198,7 +198,7 @@ public class Rewriter {
 
 
             Unifier u = new Unifier();
-            u.bind(new VarTerm("Hi"), new LogExpr(LFalse, LogExpr.LogicalOp.and, LTrue));
+            // u.bind(new VarTerm("Hi"), new LogExpr(LFalse, LogExpr.LogicalOp.and, LTrue));
 
             // Literal res = (Literal) ASSyntax.parseLiteral("test(Hi)").capply(u);
 

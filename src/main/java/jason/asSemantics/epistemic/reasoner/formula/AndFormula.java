@@ -44,6 +44,16 @@ public class AndFormula extends Formula {
     }
 
     @Override
+    protected int calcDepth() {
+        int maxDepth = 0;
+
+        for (var f : formulaList)
+            maxDepth = Math.max(maxDepth, f.getDepth());
+
+        return 1 + maxDepth;
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;

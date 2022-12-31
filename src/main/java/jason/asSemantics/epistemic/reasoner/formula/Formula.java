@@ -1,13 +1,13 @@
 package jason.asSemantics.epistemic.reasoner.formula;
 
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 
 import java.util.Objects;
 
 public abstract class Formula {
 
     private final String type;
+    private int depthCache = -1;
     protected Formula(String type)
     {
         this.type = type;
@@ -21,6 +21,14 @@ public abstract class Formula {
         return toPropString();
     }
 
+    protected abstract int calcDepth();
+
+    public final int getDepth() {
+        if(depthCache == -1)
+            depthCache = calcDepth();
+
+        return depthCache;
+    }
     @Override
     public int hashCode() {
         return type.hashCode();
