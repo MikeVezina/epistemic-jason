@@ -449,7 +449,7 @@ public abstract class Literal extends DefaultTerm implements LogicalFormula {
 
     @Override
     public Literal simplify() {
-        return this;
+        return this.clearAnnots();
     }
 
     @Override
@@ -493,6 +493,22 @@ public abstract class Literal extends DefaultTerm implements LogicalFormula {
                     needsUpdate = true;
                 return current;
             }
+
+            /*
+
+                lit(X) => N unifications => O(N) time
+
+                r(X) :- lit(X) & ... & litM(X) => O(N*M)
+
+                r2(X) :- r(X) & ... & rL(X) => O(L * N * M) =>
+
+
+
+             */
+
+
+
+
 
             private void get() {
                 needsUpdate = false;
@@ -808,7 +824,7 @@ public abstract class Literal extends DefaultTerm implements LogicalFormula {
         //                         if (belInBB.hasAnnot()) {
         //                             int nbAnnotsB = belInBB.getAnnots().size();
         //                             if (nbAnnotsB >= nbAnnots) {
-        //                                 annotsOptions = belInBB.getAnnots().subSets(nbAnnots);
+        //                                 annotsOptions = belInBB.getAnnots().suSbets(nbAnnots);
         //                                 continue beginloop;
         //                                 //get();
         //                                 //if (current != null) // if it get a value

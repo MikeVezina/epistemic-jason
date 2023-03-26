@@ -59,7 +59,7 @@ public class TransitionSystem implements Serializable {
 
     private static final long serialVersionUID = -5166620620196199391L;
 
-    public enum State {CrModel, UpModel, StartRC, SelEv, RelPl, ApplPl, SelAppl, FindOp, AddIM, ProcAct, SelInt, ExecInt, ClrInt}
+    public enum State {GenModel, UpModel, StartRC, SelEv, RelPl, ApplPl, SelAppl, FindOp, AddIM, ProcAct, SelInt, ExecInt, ClrInt}
 
     private transient Logger logger = null;
 
@@ -70,7 +70,7 @@ public class TransitionSystem implements Serializable {
     //private State         step       = State.StartRC; // first step of the SOS
 
     private State stepSense = State.StartRC;
-    private State stepDeliberate = State.CrModel;
+    private State stepDeliberate = State.GenModel;
     private State stepAct = State.ProcAct;
 
 
@@ -80,7 +80,7 @@ public class TransitionSystem implements Serializable {
 
     private List<GoalListener> goalListeners = null;
 
-    private final EpistemicExtension epistemic;
+
 
     private Queue<RunnableSerializable> taskForBeginOfCycle = new ConcurrentLinkedQueue<>();
 
@@ -110,8 +110,6 @@ public class TransitionSystem implements Serializable {
 
         if (ar != null)
             ar.setTS(this);
-
-        this.epistemic = new EpistemicExtension(this);
     }
 
     public void setLogger(AgArch arch) {
@@ -122,7 +120,7 @@ public class TransitionSystem implements Serializable {
     }
 
     public EpistemicExtension getEpistemic() {
-        return epistemic;
+        return ag.getEpistemic();
     }
 
 
@@ -234,12 +232,12 @@ public class TransitionSystem implements Serializable {
 
     private void applySemanticRuleDeliberate() throws JasonException {
         switch (stepDeliberate) {
-            case CrModel:
-                this.epistemic.modelCreateSem();
-                stepDeliberate = State.StartRC;
-                break;
+            // case GenModel:
+            //     this.getEpistemic().modelCreateSem();
+            //     stepDeliberate = State.StartRC;
+            //     break;
             case UpModel:
-                this.epistemic.modelUpdateSem();
+                this.getEpistemic().modelUpdateSem();
                 stepDeliberate = State.SelEv;
                 break;
             case SelEv:
@@ -1703,9 +1701,6 @@ public class TransitionSystem implements Serializable {
     /**********************************************************************/
 
     public void reasoningCycle() {
-        // Create model (only if not created)
-        this.epistemic.modelCreateSem();
-
         sense();
         deliberate();
         act();
