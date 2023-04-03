@@ -46,3 +46,7 @@ src/main/resources/scripts/np31.zip
 examples/sniffer/sniff.script
 examples/sniffer/sniff.properties
 /out/
+.idea/
+
+# For model constraints
+*constraints*.json
