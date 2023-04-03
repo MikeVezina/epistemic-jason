@@ -1,6 +1,7 @@
 package jason.asSemantics.epistemic.reasoner;
 
 import com.google.gson.*;
+import jason.asSemantics.CircumstanceListener;
 import jason.asSemantics.epistemic.DELEventModel;
 import jason.asSemantics.epistemic.Propositionalizer;
 import jason.asSemantics.epistemic.reasoner.formula.EpistemicFormulaLiteral;
@@ -81,6 +82,39 @@ public class EpistemicReasoner {
 
         long creationTime = System.nanoTime() - initialTime;
         metricsLogger.info("Model creation time (ms): " + (creationTime / NS_PER_MS));
+        return true;
+    }
+
+    public boolean createFakeModel(int width) {
+        // Maybe have the managed worlds object be event-driven for information updates.
+        JsonObject managedJson = new JsonObject();
+        managedJson.add("locations_model", new JsonPrimitive(width));
+//
+//         if (constraints.size() > MAX_CONSTRAINTS_LOG)
+//             LOGGER.info("Over " + MAX_CONSTRAINTS_LOG + " constraints. Not printing model creation request");
+//         else {
+// //            LOGGER.info("Model Creation (Req. Body): " + managedJson.toString());
+//         }
+//
+//         long initialTime = System.nanoTime();
+
+
+        var jsonBody = managedJson.toString();
+
+        var request = RequestBuilder
+                .post(reasonerConfiguration.getModelCreateEndpoint())
+                .setEntity(new StringEntity(jsonBody, ContentType.APPLICATION_JSON))
+                .build();
+
+        LOGGER.info("Sending Model Creation Request");
+        try (var resp = sendRequest(request, true)) {
+            LOGGER.info("Model Post Response: " + resp.getStatusLine().toString());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        // long creationTime = System.nanoTime() - initialTime;
+        // metricsLogger.info("Model creation time (ms): " + (creationTime / NS_PER_MS));
         return true;
     }
 

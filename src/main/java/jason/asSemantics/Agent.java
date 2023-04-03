@@ -27,6 +27,7 @@ import java.util.logging.Logger;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import jason.asSemantics.epistemic.EpistemicExtension;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -94,6 +95,8 @@ public class Agent implements Serializable, ToDOM {
 
     protected transient Logger logger = Logger.getLogger(Agent.class.getName());
 
+    private EpistemicExtension epistemic;
+
     public Agent() {
         checkCustomSelectOption();
     }
@@ -123,6 +126,9 @@ public class Agent implements Serializable, ToDOM {
             if (bbPars != null)
                 bb.init(ag, bbPars.getParametersArray());
             ag.load(asSrc); // load the source code of the agent
+
+            // Create epistemic model after loading program
+            ag.getEpistemic().modelCreateSem();
             return ag;
         //} catch (Exception e) {
         //    throw new JasonException("as2j: error creating the customised Agent class! - "+agClass, e);
@@ -142,11 +148,15 @@ public class Agent implements Serializable, ToDOM {
 
         if (ts == null) ts = new TransitionSystem(this, null, null, new AgArch());
 
+        // Create epistemic extension
+        epistemic = new EpistemicExtension(this.getTS());
+
         //if (ts.getSettings().hasQueryCache()) qCache = new QueryCache(this);
         //if (ts.getSettings().hasQueryProfiling()) qProfiling = new QueryProfiling(this);
         //if (ts.getSettings().hasQueryCache())     qCache = new QueryCacheSimple(this, qProfiling);
 
         if (! "false".equals(Config.get().getProperty(Config.START_WEB_MI))) MindInspectorWeb.get().registerAg(this);
+
     }
 
     /** parse and load the agent code, asSrc may be null
@@ -841,53 +851,6 @@ public class Agent implements Serializable, ToDOM {
             }
         }
 
-        /*
-            ////// previous version, without perW hashset
-            // could not use percepts.contains(l), since equalsAsTerm must be
-            // used (to ignore annotations)
-            boolean wasPerceived = false;
-            Iterator<Literal> ip = percepts.iterator();
-            while (ip.hasNext()) {
-                Literal t = ip.next();
-
-                // if perception t is already in BB
-                if (l.equalsAsStructure(t) && l.negated() == t.negated()) {
-                    wasPerceived = true;
-                    // remove in percepts, since it already is in BB
-                    // [can not be always removed, since annots in this percepts should be added in BB
-                    //  Jason team for AC, for example, use annots in perceptions]
-                    if (!l.hasAnnot())
-                        ip.remove();
-                    break;
-                }
-            }
-            if (!wasPerceived) {
-                dels++;
-                // new version (it is sure that l is in BB, only clone l when the event is relevant)
-                perceptsInBB.remove(); // remove l as perception from BB
-
-                Trigger te = new Trigger(TEOperator.del, TEType.belief, l);
-                if (ts.getC().hasListener() || pl.hasCandidatePlan(te)) {
-                    l = l.copy();
-                    l.clearAnnots();
-                    l.addAnnot(BeliefBase.TPercept);
-                    te.setLiteral(l);
-                    ts.getC().addEvent(new Event(te, Intention.EmptyInt));
-                }
-        */
-        /*
-        // even older version
-        // can not delete l, but l[source(percept)]
-        l = (Literal)l.clone();
-        l.clearAnnots();
-        l.addAnnot(BeliefBase.TPercept);
-        if (bb.remove(l)) {
-            ts.updateEvents(new Event(new Trigger(TEOperator.del, TEType.belief, l), Intention.EmptyInt));
-        }
-        */
-        //}
-        //}
-
         for (StructureWrapperForLiteral lw: perW) {
             try {
                 Literal lp = lw.getLiteral().copy().forceFullLiteralImpl();
@@ -1202,5 +1165,9 @@ public class Agent implements Serializable, ToDOM {
 
     public boolean isEpistemic() {
         return true;
+    }
+
+    public EpistemicExtension getEpistemic() {
+        return epistemic;
     }
 }
