@@ -32,26 +32,24 @@ public class EpistemicReasoner {
     private static final Logger LOGGER = Logger.getLogger(EpistemicReasoner.class.getName());
     private final Logger metricsLogger = Logger.getLogger(getClass().getName() + " - Metrics");
     private final ReasonerConfiguration reasonerConfiguration;
-    private final Propositionalizer propositionalizer;
 
-    public EpistemicReasoner(CloseableHttpClient client, Propositionalizer propositionalizer) {
+    public EpistemicReasoner(CloseableHttpClient client) {
         this.client = client;
         this.reasonerConfiguration = ReasonerConfiguration.getInstance();
-        this.propositionalizer = propositionalizer;
     }
 
-    public EpistemicReasoner(Propositionalizer propositionalizer) {
-        this(HttpClients.createDefault(), propositionalizer);
+    public EpistemicReasoner() {
+        this(HttpClients.createDefault());
     }
 
 
     public boolean createModel(Collection<Formula> constraints) {
         metricsLogger.info("Creating model with " + constraints.size() + " constraints");
 
-        dumpConstraints(constraints);
+        // dumpConstraints(constraints);
 
-        if (!constraints.isEmpty())
-            return true;
+        // if (!constraints.isEmpty())
+        //     return true;
 
         // Maybe have the managed worlds object be event-driven for information updates.
         JsonObject managedJson = new JsonObject();
@@ -456,7 +454,7 @@ public class EpistemicReasoner {
         jsonElement.addProperty("modality", formula.getEpistemicModality().getFunctor());
 
         jsonElement.addProperty("propNegated", formula.isPropositionNegated());
-        jsonElement.addProperty("prop", this.propositionalizer.propLit(formula.getRootLiteral()).toPropString());
+        jsonElement.addProperty("prop", formula.getRootLiteral().toPropFormula().toPropString());
 
 
         return jsonElement;

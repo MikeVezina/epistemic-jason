@@ -76,7 +76,12 @@ public class LiteralImpl extends Pred {
     public Literal setNegated(boolean b) {
         type = b;
         resetHashCodeCache();
+        resetPredicateIndicatorCache();
         return this;
+    }
+
+    private void resetPredicateIndicatorCache() {
+        this.predicateIndicatorCache = null;
     }
 
     @Override

@@ -59,7 +59,7 @@ public class TransitionSystem implements Serializable {
 
     private static final long serialVersionUID = -5166620620196199391L;
 
-    public enum State {GenModel, UpModel, StartRC, SelEv, RelPl, ApplPl, SelAppl, FindOp, AddIM, ProcAct, SelInt, ExecInt, ClrInt}
+    public enum State {StartRC, SelEv, RelPl, ApplPl, SelAppl, FindOp, AddIM, ProcAct, SelInt, ExecInt, ClrInt}
 
     private transient Logger logger = null;
 
@@ -70,7 +70,7 @@ public class TransitionSystem implements Serializable {
     //private State         step       = State.StartRC; // first step of the SOS
 
     private State stepSense = State.StartRC;
-    private State stepDeliberate = State.GenModel;
+    private State stepDeliberate = State.SelEv;
     private State stepAct = State.ProcAct;
 
 
@@ -79,7 +79,6 @@ public class TransitionSystem implements Serializable {
     private boolean sleepingEvt = false;
 
     private List<GoalListener> goalListeners = null;
-
 
 
     private Queue<RunnableSerializable> taskForBeginOfCycle = new ConcurrentLinkedQueue<>();
@@ -232,14 +231,6 @@ public class TransitionSystem implements Serializable {
 
     private void applySemanticRuleDeliberate() throws JasonException {
         switch (stepDeliberate) {
-            // case GenModel:
-            //     this.getEpistemic().modelCreateSem();
-            //     stepDeliberate = State.StartRC;
-            //     break;
-            case UpModel:
-                this.getEpistemic().modelUpdateSem();
-                stepDeliberate = State.SelEv;
-                break;
             case SelEv:
                 applySelEv();
                 break;
@@ -1756,9 +1747,7 @@ public class TransitionSystem implements Serializable {
                 r = taskForBeginOfCycle.poll();
             }
 
-            // Override initial step to model creation (which skips if already created)
-            stepDeliberate = State.UpModel;
-            // stepDeliberate = State.SelEv;
+            stepDeliberate = State.SelEv;
             do {
                 applySemanticRuleDeliberate();
             } while (stepDeliberate != State.ProcAct && getAgArch().isRunning());

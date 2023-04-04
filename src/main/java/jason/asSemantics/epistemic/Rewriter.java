@@ -234,7 +234,7 @@ public class Rewriter {
             // a.getTS().getC().addEvent(new Event(new Trigger(Trigger.TEOperator.add, Trigger.TEType.belief, createLiteral("bel", new NumberTermImpl(1))), null));
             a.getTS().getC().addEvent(new Event(new Trigger(Trigger.TEOperator.add, Trigger.TEType.belief, parseLiteral("moved(right)")), null));
 
-            a.getTS().getEpistemic().modelUpdateSem();
+            // a.getTS().getEpistemic().modelUpdateSem();
 
 
             // EpistemicExtension ext = new EpistemicExtension(a.getTS());
