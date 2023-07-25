@@ -235,6 +235,12 @@ public class EpistemicExtension implements CircumstanceListener {
 
             Literal bodyLit = (Literal) cur.getBodyTerm();
 
+            // TODO: Add test conditions to 'on' plans, to denote effect conditions
+            /************************/
+            /************************/
+            /************************/
+
+
             if (cur.getBodyType() == PlanBody.BodyType.addBel && !bodyLit.negated()) {
                 ev.addPostCondition(new PropFormula(new Pred(bodyLit)), new PropFormula(new Pred(Literal.LTrue)));
             } else if (cur.getBodyType() == PlanBody.BodyType.delBel || bodyLit.negated()) {

@@ -12,7 +12,7 @@ defaultTasks 'jar'
 apply plugin: 'java'
 apply plugin: 'maven-publish'
 
-version '3.1-epistemic'
+version '3.1-epistemic-planning'
 group   'org.jason'
 
 java {
@@ -28,7 +28,7 @@ repositories {
     //maven { url "http://jacamo.sourceforge.net/maven2"  }
     //maven { url "http://jade.tilab.com/maven"  //}
     flatDir {
-       dirs 'jedit', 'demos/persistent-belief-base/lib'
+       dirs 'jedit', 'demos/persistent-belief-base/lib', 'libs'
     }
 }
 
@@ -39,11 +39,13 @@ dependencies {
     implementation group: 'net.sf.ingenias', name: 'jade', version: '4.3'
 
     implementation fileTree(dir: 'jedit', include: '*.jar') // using fileTree, jedit jars are not included as a dependency in the pom file
-
+//    implementation fileTree(dir: 'libs', include: '*.jar') // using fileTree, jedit jars are not included as a dependency in the pom file
+    implementation files('libs/javagp.jar')
     implementation group: 'org.apache.ant',  name: 'ant',  version: '1.10.5'
 
     implementation group: 'javax.json', name: 'javax.json-api', version: '1.1.4'
     implementation group: 'org.glassfish', name: 'javax.json', version: '1.1.4'
+
 
     testImplementation group: 'junit', name: 'junit', version: '4.12'
     testImplementation name: 'hsqldb'
